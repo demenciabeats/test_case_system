@@ -2,8 +2,9 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const UserRole = require('../models/UserRole');
+const RolePermission = require('../models/RolePermission');
 
-// Crear usuario
 exports.registerUser = async (req, res) => {
     try {
         const { username, email, password, firstName, lastName } = req.body;
@@ -15,7 +16,6 @@ exports.registerUser = async (req, res) => {
     }
 };
 
-// Login
 exports.loginUser = async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -23,14 +23,16 @@ exports.loginUser = async (req, res) => {
         if (!user) return res.status(400).json({ message: 'Usuario no encontrado' });
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(400).json({ message: 'Contraseña incorrecta' });
-        const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        res.json({ token, user });
+        const roles = await UserRole.find({ user_id: user._id }).populate('role_id');
+        const rolePermissions = await RolePermission.find({ role_id: { $in: roles.map(r => r.role_id) } }).populate('permission_id');
+        const permissions = rolePermissions.map(rp => rp.permission_id.permission_name);
+        const token = jwt.sign({ id: user._id, roles: roles.map(r => r.role_id.role_name), permissions }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        res.json({ token, user, roles: roles.map(r => r.role_id.role_name), permissions });
     } catch (error) {
         res.status(500).json({ message: 'Error en login', error });
     }
 };
 
-// Obtener usuarios
 exports.getUsers = async (req, res) => {
     try {
         const users = await User.find();
@@ -40,18 +42,19 @@ exports.getUsers = async (req, res) => {
     }
 };
 
-// Actualizar usuario
 exports.updateUser = async (req, res) => {
     try {
         const { id } = req.params;
         const updatedUser = await User.findByIdAndUpdate(id, req.body, { new: true });
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
         res.json(updatedUser);
     } catch (error) {
         res.status(500).json({ message: 'Error actualizando usuario' });
     }
 };
 
-// Eliminar usuario
 exports.deleteUser = async (req, res) => {
     try {
         await User.findByIdAndDelete(req.params.id);
