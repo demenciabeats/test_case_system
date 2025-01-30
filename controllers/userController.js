@@ -36,9 +36,19 @@ exports.loginUser = async (req, res) => {
 exports.getUsers = async (req, res) => {
     try {
         const users = await User.find();
-        res.json(users);
+        const usersWithRolesAndPermissions = await Promise.all(users.map(async (user) => {
+            const roles = await UserRole.find({ user_id: user._id }).populate('role_id');
+            const rolePermissions = await RolePermission.find({ role_id: { $in: roles.map(r => r.role_id._id) } }).populate('permission_id');
+            const permissions = rolePermissions.map(rp => rp.permission_id.permission_name);
+            return {
+                ...user.toObject(),
+                roles: roles.map(r => r.role_id.role_name),
+                permissions
+            };
+        }));
+        res.json(usersWithRolesAndPermissions);
     } catch (error) {
-        res.status(500).json({ message: 'Error obteniendo usuarios' });
+        res.status(500).json({ message: 'Error obteniendo usuarios', error });
     }
 };
 
