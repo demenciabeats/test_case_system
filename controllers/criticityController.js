@@ -20,3 +20,22 @@ exports.updateCriticity = async (req, res) => {
         res.status(500).json({ message: 'Error actualizando criticidad', error });
     }
 };
+
+exports.getCriticities = async (req, res) => {
+    try {
+        const criticities = await Criticity.find();
+        res.json(criticities);
+    } catch (error) {
+        res.status(500).json({ message: 'Error obteniendo criticidades', error });
+    }
+};
+
+exports.deleteCriticity = async (req, res) => {
+    try {
+        const deletedCriticity = await Criticity.findByIdAndDelete(req.params.id);
+        if (!deletedCriticity) return res.status(404).json({ message: 'Criticidad no encontrada' });
+        res.json({ message: 'Criticidad eliminada' });
+    } catch (error) {
+        res.status(500).json({ message: 'Error eliminando criticidad', error });
+    }
+};

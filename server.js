@@ -12,6 +12,8 @@ const criticityRoutes = require('./routes/criticityRoutes');
 const buildRoutes = require('./routes/buildRoutes');
 const requirementRoutes = require('./routes/requirementRoutes');
 const celulaRoutes = require('./routes/celulaRoutes');
+const projectRoutes = require('./routes/projectRoutes');
+const testSuiteRoutes = require('./routes/testSuiteRoutes');
 const app = express();
 
 connectDB();
@@ -26,6 +28,8 @@ app.use('/api/criticities', criticityRoutes);
 app.use('/api/builds', buildRoutes);
 app.use('/api/requirements', requirementRoutes);
 app.use('/api/celulas', celulaRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/test_suites', testSuiteRoutes);
 
 
 app.listen(process.env.PORT, () => {
