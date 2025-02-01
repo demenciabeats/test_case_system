@@ -1,14 +1,22 @@
-/// models/TestSuite.js
 const mongoose = require('mongoose');
+
+const validSuiteTypes = ['Principal', 'Funcional', 'Regresión', 'Integración'];
+const validSuiteStatuses = ['Activa', 'Inactiva', 'Obsoleta'];
+
 const TestSuiteSchema = new mongoose.Schema({
     suite_id: { type: String, unique: true, immutable: true },
     suite_name: { type: String, required: true },
     suite_description: { type: String, required: true },
-    owner_suite_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TestSuite', default: null, required: false },
-    project_id: { type: String, required: true },
+    owner_suite_id: { type: String, default: null, required: false }, // Cambio de ObjectId a String para evitar problemas de referencia
+    project_id: { type: String, required: true }, // Ahora referencia a `Project`
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+
+    suite_type: { type: String, enum: validSuiteTypes, default: 'Funcional' }, // Define el tipo de suite
+    suite_status: { type: String, enum: validSuiteStatuses, default: 'Activa' }, // Estado de la suite
+
 }, { timestamps: true });
 
+// Auto-generación del `suite_id` con formato `TST-XXXX`
 TestSuiteSchema.pre('save', async function (next) {
     if (!this.suite_id) {
         const lastSuite = await mongoose.model('TestSuite').findOne().sort({ createdAt: -1 });
