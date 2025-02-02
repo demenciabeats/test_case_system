@@ -4,20 +4,10 @@ const ProjectSchema = new mongoose.Schema({
     project_id: { type: String, unique: true, immutable: true },
     project_name: { type: String, required: true },
     description: { type: String },
-
-    // ✅ Usuario que creó el proyecto
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-
-    // ✅ Product Manager asignado al proyecto
     product_manager: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-
-    // ✅ Célula de desarrollo asociada
     celula: { type: mongoose.Schema.Types.ObjectId, ref: 'Celula' },
-
-    // ✅ Palabras clave asociadas
     keywords: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Keyword' }],
-
-    // ✅ Tipo de proyecto más detallado
     project_category: {
         type: String,
         enum: [
@@ -41,8 +31,6 @@ const ProjectSchema = new mongoose.Schema({
         ],
         required: true
     },
-
-    // ✅ Tecnologías principales del proyecto
     technologies: [{
         type: String,
         enum: [
@@ -52,8 +40,6 @@ const ProjectSchema = new mongoose.Schema({
             "Docker", "Kubernetes", "Terraform", "Jenkins", "GitHub Actions", "AWS", "Azure", "GCP"
         ]
     }],
-
-    // ✅ Modelo de negocio
     business_model: {
         type: String,
         enum: [
@@ -67,8 +53,6 @@ const ProjectSchema = new mongoose.Schema({
         ],
         required: true
     },
-
-    // ✅ Nivel de seguridad requerido
     security_level: {
         type: String,
         enum: [
@@ -79,8 +63,6 @@ const ProjectSchema = new mongoose.Schema({
         ],
         required: true
     },
-
-    // ✅ Plataforma donde se ejecuta el proyecto
     execution_platform: {
         type: String,
         enum: [
@@ -98,9 +80,7 @@ const ProjectSchema = new mongoose.Schema({
             'Híbrido'
         ],
         required: true
-    },
-
-    // ✅ Estado de mantenimiento del proyecto
+    },  
     maintenance_status: {
         type: String,
         enum: [
@@ -111,8 +91,6 @@ const ProjectSchema = new mongoose.Schema({
         ],
         required: true
     },
-
-    // ✅ Prioridad del proyecto (más detallado)
     priority: {
         type: String,
         enum: [
@@ -127,8 +105,6 @@ const ProjectSchema = new mongoose.Schema({
         ],
         default: 'Media - Necesario en roadmap'
     },
-
-    // ✅ Complejidad del proyecto (más detallado)
     complexity: {
         type: String,
         enum: [
@@ -143,13 +119,9 @@ const ProjectSchema = new mongoose.Schema({
         ],
         default: 'Media - Integración con otros sistemas'
     },
-
-    // ✅ Indica si el proyecto está activo o no
     is_active: { type: Boolean, default: true }
-
 }, { timestamps: true });
 
-// ✅ Generación automática de `project_id`
 ProjectSchema.pre('save', async function (next) {
     if (!this.project_id) {
         const lastProject = await mongoose.model('Project').findOne().sort({ createdAt: -1 });
