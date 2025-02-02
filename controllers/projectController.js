@@ -122,24 +122,38 @@ exports.deleteProject = async (req, res) => {
     }
 };
 
-// ✅ **Obtener todos los Proyectos**
+// ✅ **Obtener todos los Proyectos con salida estructurada**
 exports.getProjects = async (req, res) => {
     try {
-        const projects = await Project.find().populate('created_by product_manager celula keywords');
+        const projects = await Project.find()
+            .populate('created_by', 'username') // Solo ID y username
+            .populate('product_manager', 'username') // Solo ID y username
+            .populate('celula', 'celula_name') // Solo ID y nombre de la célula
+            .populate('keywords', 'keyword_name') // Solo ID y nombre de la keyword
+            .select('-__v -updatedAt'); // Excluir campos innecesarios
+
         res.json(projects);
     } catch (error) {
+        console.error("❌ Error obteniendo Proyectos:", error);
         res.status(500).json({ message: 'Error obteniendo proyectos', error });
     }
 };
 
-// ✅ **Obtener un Proyecto por su ID**
+// ✅ **Obtener un Proyecto por su ID con salida estructurada**
 exports.getProjectById = async (req, res) => {
     try {
-        const project = await Project.findOne({ project_id: req.params.id }).populate('created_by product_manager celula keywords');
+        const project = await Project.findOne({ project_id: req.params.id })
+            .populate('created_by', 'username') // Solo ID y username
+            .populate('product_manager', 'username') // Solo ID y username
+            .populate('celula', 'celula_name') // Solo ID y nombre de la célula
+            .populate('keywords', 'keyword_name') // Solo ID y nombre de la keyword
+            .select('-__v -updatedAt'); // Excluir campos innecesarios
+
         if (!project) return res.status(404).json({ message: 'Proyecto no encontrado' });
 
         res.json(project);
     } catch (error) {
+        console.error("❌ Error obteniendo Proyecto:", error);
         res.status(500).json({ message: 'Error obteniendo proyecto', error });
     }
 };

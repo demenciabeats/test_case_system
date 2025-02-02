@@ -74,46 +74,67 @@ exports.createRequirement = async (req, res) => {
     }
 };
 
-// ✅ Obtener todos los Requerimientos con Keywords solo con ID y Nombre
+// ✅ **Obtener todos los Requerimientos con salida optimizada**
 exports.getRequirements = async (req, res) => {
     try {
         const requirements = await Requirement.find()
-            .populate('created_by tech_lead celula testers builds')
-            .populate('keywords', 'keyword_name');
+            .populate('created_by', 'username') // ✅ Solo ID y username
+            .populate('tech_lead', 'username') // ✅ Solo ID y username
+            .populate('celula', 'celula_name') // ✅ Solo ID y nombre de la célula
+            .populate('testers', 'username') // ✅ Solo ID y username
+            .populate('keywords', 'keyword_name') // ✅ Solo ID y nombre de las keywords
+            .populate('builds', 'build_name') // ✅ Solo ID y nombre de la build
+            .select('-__v -updatedAt'); // ✅ Excluir campos innecesarios
 
         res.json(requirements);
     } catch (error) {
+        console.error("❌ Error obteniendo Requerimientos:", error);
         res.status(500).json({ message: 'Error obteniendo requerimientos', error });
     }
 };
 
-// ✅ Obtener un Requerimiento por ID con Keywords solo con ID y Nombre
+// ✅ **Obtener un Requerimiento por su ID con salida optimizada**
 exports.getRequirementById = async (req, res) => {
     try {
         const requirement = await Requirement.findOne({ requirement_id: req.params.id })
-            .populate('created_by tech_lead celula testers builds')
-            .populate('keywords', 'keyword_name');
+            .populate('created_by', 'username') // ✅ Solo ID y username
+            .populate('tech_lead', 'username') // ✅ Solo ID y username
+            .populate('celula', 'celula_name') // ✅ Solo ID y nombre de la célula
+            .populate('testers', 'username') // ✅ Solo ID y username
+            .populate('keywords', 'keyword_name') // ✅ Solo ID y nombre de las keywords
+            .populate('builds', 'build_name') // ✅ Solo ID y nombre de la build
+            .select('-__v -updatedAt'); // ✅ Excluir campos innecesarios
 
         if (!requirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
+
         res.json(requirement);
     } catch (error) {
+        console.error("❌ Error obteniendo Requerimiento:", error);
         res.status(500).json({ message: 'Error obteniendo requerimiento', error });
     }
 };
 
-// ✅ Obtener un Requerimiento por `external_id` con Keywords solo con ID y Nombre
+// ✅ **Obtener un Requerimiento por `external_id` con salida optimizada**
 exports.getRequirementByExternalId = async (req, res) => {
     try {
         const requirement = await Requirement.findOne({ external_id: req.params.externalId })
-            .populate('created_by tech_lead celula testers builds')
-            .populate('keywords', 'keyword_name');
+            .populate('created_by', 'username') // ✅ Solo ID y username
+            .populate('tech_lead', 'username') // ✅ Solo ID y username
+            .populate('celula', 'celula_name') // ✅ Solo ID y nombre de la célula
+            .populate('testers', 'username') // ✅ Solo ID y username
+            .populate('keywords', 'keyword_name') // ✅ Solo ID y nombre de las keywords
+            .populate('builds', 'build_name') // ✅ Solo ID y nombre de la build
+            .select('-__v -updatedAt'); // ✅ Excluir campos innecesarios
 
         if (!requirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
+
         res.json(requirement);
     } catch (error) {
+        console.error("❌ Error obteniendo Requerimiento por external_id:", error);
         res.status(500).json({ message: 'Error obteniendo requerimiento por external_id', error });
     }
 };
+
 
 // ✅ Actualizar un Requerimiento incluyendo Keywords
 exports.updateRequirement = async (req, res) => {

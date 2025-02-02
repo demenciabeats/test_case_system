@@ -64,33 +64,60 @@ exports.createBuild = async (req, res) => {
     }
 };
 
-// ✅ **Obtener todas las Builds con Keywords solo con ID y Nombre**
+// ✅ **Obtener todas las Builds con salida optimizada y ordenada**
 exports.getBuilds = async (req, res) => {
     try {
         const builds = await Build.find()
-            .populate('created_by', 'username email')
-            .populate('keywords', 'keyword_name');
+            .populate('created_by', 'username') // ✅ Solo ID y username
+            .populate('keywords', 'keyword_name') // ✅ Solo ID y nombre de las keywords
+            .select('-__v -updatedAt') // ✅ Excluir campos innecesarios
+            .sort({ build_id: 1 }); // ✅ Ordenar por build_id
 
-        res.json(builds);
+        const formattedBuilds = builds.map(build => ({
+            build_id: build.build_id,
+            build_name: build.build_name,
+            version: build.version,
+            status: build.status,
+            environment: build.environment,
+            created_by: build.created_by,
+            keywords: build.keywords,
+            createdAt: build.createdAt
+        }));
+
+        res.json(formattedBuilds);
     } catch (error) {
+        console.error("❌ Error obteniendo Builds:", error);
         res.status(500).json({ message: 'Error obteniendo builds', error });
     }
 };
 
-// ✅ **Obtener una Build por ID con Keywords detallados**
+// ✅ **Obtener una Build por ID con salida optimizada y ordenada**
 exports.getBuildById = async (req, res) => {
     try {
         const build = await Build.findOne({ build_id: req.params.id })
-            .populate('created_by', 'username email')
-            .populate('keywords', 'keyword_name');
+            .populate('created_by', 'username') // ✅ Solo ID y username
+            .populate('keywords', 'keyword_name') // ✅ Solo ID y nombre de las keywords
+            .select('-__v -updatedAt'); // ✅ Excluir campos innecesarios
 
         if (!build) return res.status(404).json({ message: 'Build no encontrada' });
-        res.json(build);
+
+        const formattedBuild = {
+            build_id: build.build_id,
+            build_name: build.build_name,
+            version: build.version,
+            status: build.status,
+            environment: build.environment,
+            created_by: build.created_by,
+            keywords: build.keywords,
+            createdAt: build.createdAt
+        };
+
+        res.json(formattedBuild);
     } catch (error) {
+        console.error("❌ Error obteniendo Build:", error);
         res.status(500).json({ message: 'Error obteniendo build', error });
     }
 };
-
 // ✅ **Actualizar una Build incluyendo Keywords**
 exports.updateBuild = async (req, res) => {
     try {
