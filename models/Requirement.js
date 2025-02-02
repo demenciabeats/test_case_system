@@ -4,34 +4,41 @@ const RequirementSchema = new mongoose.Schema({
     requirement_id: { type: String, unique: true, immutable: true }, // Correlativo REQ-XXXX
     requirement_name: { type: String, required: true }, // Nombre del requerimiento
     description: { type: String }, // Descripción detallada
+    project_id: { type: String, required: true }, // ✅ Relación con el proyecto
     status: { 
         type: String, 
-        enum: ['Pendiente', 'En Desarrollo', 'En Revisión', 'Aprobado', 'Rechazado'], 
-        default: 'Pendiente' 
-    }, // Estado del requerimiento
+        enum: ['Pendiente - PreQA', 'En Desarrollo - Development', 'QA', 'Aprobado', 'Rechazado'], 
+        default: 'Pendiente - PreQA' 
+    },
     requirement_type: { 
         type: String, 
         enum: ['Funcional', 'No Funcional', 'Seguridad', 'Rendimiento', 'Usabilidad'], 
         required: true 
-    }, // Tipo de requerimiento
+    },
     priority: { 
         type: String, 
-        enum: ['Baja', 'Media', 'Alta', 'Crítica'], 
+        enum: ['Baja', 'Media Baja', 'Media', 'Alta', 'Crítica'], 
         default: 'Media' 
-    }, // Prioridad del requerimiento
+    },
     complexity: { 
         type: String, 
-        enum: ['Baja', 'Media', 'Alta'], 
+        enum: ['Baja', 'Media', 'Alta', 'Muy Alta'], 
         default: 'Media' 
-    }, // Complejidad del requerimiento
+    },
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Usuario creador
     tech_lead: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Líder técnico asignado
+    testers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // ✅ Testers asignados
     celula: { type: mongoose.Schema.Types.ObjectId, ref: 'Celula' }, // Célula de desarrollo
-    builds: [{ type: String, ref: 'Build' }], // Asociación con `build_id` en lugar de `_id`
-    external_id: { type: String, unique: true, sparse: true }, // ID externo para integración con Jira u otros sistemas
+    builds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Build' }], // Asociación con `build_id`
+    external_id: { type: String, unique: true, sparse: true }, // ID externo para Jira u otros sistemas
+    external_link: { type: String }, // ✅ Link a Jira u otro sistema externo
+    sprints: [{ type: String }], // ✅ Relación con uno o más sprints
+    estimated_end_date: { type: Date }, // ✅ Fecha estimada de finalización (se pone manualmente)
+    start_date: { type: Date }, // ✅ Fecha de inicio (cuando el estado cambia a QA)
+    end_date: { type: Date } // ✅ Fecha de finalización (cuando el estado cambia a Aprobado o Rechazado)
 }, { timestamps: true });
 
-// ✅ Generación automática del `requirement_id` con formato REQ-XXXX
+// ✅ Generación automática del `requirement_id`
 RequirementSchema.pre('save', async function (next) {
     if (!this.requirement_id) {
         const lastRequirement = await mongoose.model('Requirement').findOne().sort({ createdAt: -1 });

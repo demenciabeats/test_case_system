@@ -1,14 +1,15 @@
+/// controllers/requirementController.js
 const mongoose = require('mongoose');
 const Requirement = require('../models/Requirement');
 const Build = require('../models/Build');
 
-// Valores permitidos para los enums
-const validStatuses = ['Pendiente', 'En Desarrollo', 'En Revisión', 'Aprobado', 'Rechazado'];
+// Valores permitidos para los ENUMs
+const validStatuses = ['Pendiente - PreQA', 'En Desarrollo - Development', 'QA', 'Aprobado', 'Rechazado'];
 const validRequirementTypes = ['Funcional', 'No Funcional', 'Seguridad', 'Rendimiento', 'Usabilidad'];
-const validPriorities = ['Baja', 'Media', 'Alta', 'Crítica'];
-const validComplexities = ['Baja', 'Media', 'Alta'];
+const validPriorities = ['Baja', 'Media Baja', 'Media', 'Alta', 'Crítica'];
+const validComplexities = ['Baja', 'Media', 'Alta', 'Muy Alta'];
 
-// Función para validar valores de enum
+// Validación ENUM
 const validateEnum = (value, validValues, fieldName) => {
     if (value && !validValues.includes(value)) {
         return `El valor '${value}' para '${fieldName}' no es válido. Valores permitidos: ${validValues.join(', ')}.`;
@@ -16,19 +17,15 @@ const validateEnum = (value, validValues, fieldName) => {
     return null;
 };
 
-// ✅ **Crear un Requerimiento**
+// Crear un Requerimiento
+// Crear un Requerimiento
 exports.createRequirement = async (req, res) => {
     try {
-        const { status, requirement_type, priority, complexity, external_id } = req.body;
-
-        // Validación de ENUMS
+        const { status, requirement_type, priority, complexity, external_id, project_id, builds } = req.body;
         let errors = [];
-        if (status) errors.push(validateEnum(status, validStatuses, 'status'));
-        if (requirement_type) errors.push(validateEnum(requirement_type, validRequirementTypes, 'requirement_type'));
-        if (priority) errors.push(validateEnum(priority, validPriorities, 'priority'));
-        if (complexity) errors.push(validateEnum(complexity, validComplexities, 'complexity'));
 
-        // Validación de `external_id` único
+        if (!project_id) errors.push("El campo 'project_id' es obligatorio.");
+
         if (external_id) {
             const existingRequirement = await Requirement.findOne({ external_id });
             if (existingRequirement) {
@@ -36,32 +33,79 @@ exports.createRequirement = async (req, res) => {
             }
         }
 
-        // Filtrar errores
-        errors = errors.filter(error => error !== null);
-        if (errors.length > 0) return res.status(400).json({ message: 'Errores en la validación de datos', errors });
+        // Convertir builds a ObjectId si existen
+        let buildIds = [];
+        if (builds && builds.length > 0) {
+            buildIds = await Promise.all(builds.map(async (buildId) => {
+                const build = await Build.findOne({ build_id: buildId });
+                return build ? build._id : null;
+            }));
 
-        // Crear el requerimiento
-        const requirement = new Requirement({ ...req.body, created_by: req.user.id });
+            buildIds = buildIds.filter(id => id !== null);
+        }
+
+        const requirement = new Requirement({ 
+            ...req.body, 
+            builds: buildIds, // Se asignan los ObjectIds en lugar de los strings
+            created_by: req.user.id 
+        });
+
         await requirement.save();
-        res.status(201).json(requirement);
+
+        const fullRequirement = await Requirement.findOne({ requirement_id: requirement.requirement_id })
+            .populate('created_by tech_lead celula testers builds');
+
+        res.status(201).json(fullRequirement);
     } catch (error) {
+        console.error(error);
         res.status(500).json({ message: 'Error creando requerimiento', error });
     }
 };
 
-// ✅ **Actualizar un Requerimiento**
+
+// Obtener todos los Requerimientos
+exports.getRequirements = async (req, res) => {
+    try {
+        const requirements = await Requirement.find()
+            .populate('created_by tech_lead celula testers builds');
+        res.json(requirements);
+    } catch (error) {
+        res.status(500).json({ message: 'Error obteniendo requerimientos', error });
+    }
+};
+
+// Obtener un Requerimiento por ID
+exports.getRequirementById = async (req, res) => {
+    try {
+        const requirement = await Requirement.findOne({ requirement_id: req.params.id })
+            .populate('created_by tech_lead celula testers builds');
+        if (!requirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
+        res.json(requirement);
+    } catch (error) {
+        res.status(500).json({ message: 'Error obteniendo requerimiento', error });
+    }
+};
+
+// Obtener un Requerimiento por external_id
+exports.getRequirementByExternalId = async (req, res) => {
+    try {
+        const requirement = await Requirement.findOne({ external_id: req.params.externalId })
+            .populate('created_by tech_lead celula testers builds');
+        if (!requirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
+        res.json(requirement);
+    } catch (error) {
+        res.status(500).json({ message: 'Error obteniendo requerimiento por external_id', error });
+    }
+};
+
+// Actualizar un Requerimiento
 exports.updateRequirement = async (req, res) => {
     try {
-        const { requirement_id, status, requirement_type, priority, complexity, external_id, ...updateData } = req.body;
+        const { status, requirement_type, priority, complexity, external_id, project_id, ...updateData } = req.body;
         let errors = [];
 
-        // Validación de ENUMS
-        if (status) errors.push(validateEnum(status, validStatuses, 'status'));
-        if (requirement_type) errors.push(validateEnum(requirement_type, validRequirementTypes, 'requirement_type'));
-        if (priority) errors.push(validateEnum(priority, validPriorities, 'priority'));
-        if (complexity) errors.push(validateEnum(complexity, validComplexities, 'complexity'));
+        if (!project_id) errors.push("El campo 'project_id' es obligatorio.");
 
-        // Validación de external_id único al actualizar
         if (external_id) {
             const existingRequirement = await Requirement.findOne({ external_id, requirement_id: { $ne: req.params.id } });
             if (existingRequirement) {
@@ -70,16 +114,15 @@ exports.updateRequirement = async (req, res) => {
             updateData.external_id = external_id;
         }
 
-        // Filtrar errores
         errors = errors.filter(error => error !== null);
         if (errors.length > 0) return res.status(400).json({ message: 'Errores en la validación de datos', errors });
 
-        // Actualizar el requerimiento
         const updatedRequirement = await Requirement.findOneAndUpdate(
             { requirement_id: req.params.id },
             updateData,
             { new: true }
-        );
+        ).populate('created_by tech_lead celula testers builds');
+
         if (!updatedRequirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
 
         res.json(updatedRequirement);
@@ -88,7 +131,7 @@ exports.updateRequirement = async (req, res) => {
     }
 };
 
-// ✅ **Eliminar un Requerimiento**
+// Eliminar un Requerimiento
 exports.deleteRequirement = async (req, res) => {
     try {
         const deletedRequirement = await Requirement.findOneAndDelete({ requirement_id: req.params.id });
@@ -100,81 +143,5 @@ exports.deleteRequirement = async (req, res) => {
         res.json({ message: 'Requerimiento eliminado correctamente', deletedRequirement });
     } catch (error) {
         res.status(500).json({ message: 'Error eliminando requerimiento', error });
-    }
-};
-
-// ✅ **Obtener todos los Requerimientos**
-exports.getRequirements = async (req, res) => {
-    try {
-        let requirements = await Requirement.find().populate('created_by tech_lead celula');
-
-        // Obtener detalles de las builds asociadas
-        for (let requirement of requirements) {
-            if (requirement.builds.length > 0) {
-                let buildsData = await Build.find({ build_id: { $in: requirement.builds } });
-                requirement = requirement.toObject(); // Convertir el documento a objeto para modificarlo
-                requirement.build_details = buildsData; // Agregar los detalles de la Build
-            }
-        }
-
-        res.json(requirements);
-    } catch (error) {
-        res.status(500).json({ message: 'Error obteniendo requerimientos', error });
-    }
-};
-
-// ✅ **Obtener un Requerimiento por su ID**
-exports.getRequirementById = async (req, res) => {
-    try {
-        const requirement = await Requirement.findOne({ requirement_id: req.params.id }).populate('created_by tech_lead celula');
-        if (!requirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
-
-        res.json(requirement);
-    } catch (error) {
-        res.status(500).json({ message: 'Error obteniendo requerimiento', error });
-    }
-};
-
-// ✅ **Obtener un Requerimiento por su ID Externo (Jira, etc.)**
-exports.getRequirementByExternalId = async (req, res) => {
-    try {
-        const requirement = await Requirement.findOne({ external_id: req.params.externalId }).populate('created_by tech_lead celula');
-        if (!requirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
-
-        res.json(requirement);
-    } catch (error) {
-        res.status(500).json({ message: 'Error obteniendo requerimiento por external_id', error });
-    }
-};
-
-// ✅ **Asociar una Build a un Requerimiento**
-exports.addBuildToRequirement = async (req, res) => {
-    try {
-        const { requirement_id, build_id } = req.body;
-
-        // Validar que existan los IDs
-        if (!requirement_id || !build_id) {
-            return res.status(400).json({ message: 'Se requiere requirement_id y build_id' });
-        }
-
-        // ✅ Buscar la Build por su `build_id`
-        const build = await Build.findOne({ build_id });
-        if (!build) {
-            return res.status(404).json({ message: `No se encontró una Build con ID ${build_id}` });
-        }
-
-        // ✅ Buscar el requerimiento por `requirement_id`
-        const requirement = await Requirement.findOne({ requirement_id });
-        if (!requirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
-
-        // ✅ Verificar si la Build ya está asociada
-        if (!requirement.builds.includes(build.build_id)) {
-            requirement.builds.push(build.build_id);
-            await requirement.save();
-        }
-
-        res.json({ message: 'Build asociada correctamente', requirement });
-    } catch (error) {
-        res.status(500).json({ message: 'Error asociando Build al requerimiento', error });
     }
 };

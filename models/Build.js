@@ -15,7 +15,7 @@ const BuildSchema = new mongoose.Schema({
         default: 'Pendiente' 
     }, // Estado de la Build
     environment: {
-        os: { type: String, enum: ["Windows", "OSX","Lisnux","Unix" ]},
+        os: { type: String, enum: ["Windows", "OSX", "Linux", "Unix"] },
         language: { 
             type: String, 
             enum: [
@@ -29,18 +29,29 @@ const BuildSchema = new mongoose.Schema({
             ],
             required: true
         }, 
-        execution_env: { type: String, enum: ['QA', 'Staging', 'Production','Develop'], default: 'QA' } // Entorno de ejecución
-    },
-    created_at: { type: Date, default: Date.now },
-    updated_at: { type: Date, default: Date.now }
-}, { timestamps: true });
+        execution_env: { type: String, enum: ['QA', 'Staging', 'Production', 'Develop'], default: 'QA' } // Entorno de ejecución
+    }
+}, { timestamps: true }); // ✅ Solo esto generará `createdAt` y `updatedAt`
 
-// Auto-generación del build_id con formato BLD-XXXX
+// ✅ Auto-generación del build_id con formato BLD-XXXX
 BuildSchema.pre('save', async function (next) {
     if (!this.build_id) {
-        const lastBuild = await mongoose.model('Build').findOne().sort({ createdAt: -1 });
-        const lastNumber = lastBuild ? parseInt(lastBuild.build_id.split('-')[1]) : 0;
-        this.build_id = `BLD-${String(lastNumber + 1).padStart(4, '0')}`;
+        try {
+            const lastBuild = await mongoose.model('Build').findOne().sort({ createdAt: -1 });
+
+            let lastNumber = 0;
+            if (lastBuild && lastBuild.build_id) {
+                const match = lastBuild.build_id.match(/BLD-(\d+)/);
+                if (match) {
+                    lastNumber = parseInt(match[1], 10);
+                }
+            }
+
+            this.build_id = `BLD-${String(lastNumber + 1).padStart(4, '0')}`;
+        } catch (error) {
+            console.error("Error generando build_id:", error);
+            return next(error);
+        }
     }
     next();
 });
