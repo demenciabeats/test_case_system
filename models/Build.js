@@ -30,8 +30,9 @@ const BuildSchema = new mongoose.Schema({
             required: true
         }, 
         execution_env: { type: String, enum: ['QA', 'Staging', 'Production', 'Develop'], default: 'QA' } // Entorno de ejecución
-    }
-}, { timestamps: true }); // ✅ Solo esto generará `createdAt` y `updatedAt`
+    },
+    keywords: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Keyword' }] // Relación con múltiples Keywords
+}, { timestamps: true });
 
 // ✅ Auto-generación del build_id con formato BLD-XXXX
 BuildSchema.pre('save', async function (next) {

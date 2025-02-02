@@ -1,9 +1,17 @@
 const TestSuite = require('../models/TestSuite');
+const Project = require('../models/Project');
+const Keyword = require('../models/Keyword');
 
-// ✅ **Crear una Test Suite**
+// ✅ **Crear una Test Suite con Keywords y Validación de Project**
 exports.createTestSuite = async (req, res) => {
     try {
-        const { suite_name, suite_description, owner_suite_id, project_id } = req.body;
+        const { suite_name, suite_description, owner_suite_id, project_id, keywords } = req.body;
+
+        // Validar que `project_id` exista y obtener su `_id`
+        const project = await Project.findOne({ project_id });
+        if (!project) {
+            return res.status(400).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
+        }
 
         // Validar que `owner_suite_id` exista si se proporciona
         if (owner_suite_id) {
@@ -13,10 +21,24 @@ exports.createTestSuite = async (req, res) => {
             }
         }
 
-        // Crear la Test Suite
-        const newTestSuite = new TestSuite({ ...req.body, created_by: req.user.id });
-        await newTestSuite.save();
+        // Validar Keywords
+        let keywordObjects = [];
+        if (keywords && keywords.length > 0) {
+            keywordObjects = await Keyword.find({ _id: { $in: keywords } });
+            if (keywordObjects.length !== keywords.length) {
+                return res.status(400).json({ message: "Algunos keywords no existen en la base de datos." });
+            }
+        }
 
+        // Crear la Test Suite
+        const newTestSuite = new TestSuite({ 
+            ...req.body, 
+            project_id: project._id, // Asigna el `_id` del proyecto en lugar del `project_id`
+            created_by: req.user.id,
+            keywords: keywordObjects.map(k => k._id)
+        });
+
+        await newTestSuite.save();
         res.status(201).json(newTestSuite);
     } catch (error) {
         console.error("❌ Error creando Test Suite:", error);
@@ -24,10 +46,19 @@ exports.createTestSuite = async (req, res) => {
     }
 };
 
-// ✅ **Actualizar una Test Suite**
+// ✅ **Actualizar una Test Suite con Keywords y Validación de Project**
 exports.updateTestSuite = async (req, res) => {
     try {
-        const { suite_id, owner_suite_id, ...updateData } = req.body;
+        const { owner_suite_id, project_id, keywords, ...updateData } = req.body;
+
+        // Validar que `project_id` exista y obtener su `_id`
+        if (project_id) {
+            const project = await Project.findOne({ project_id });
+            if (!project) {
+                return res.status(400).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
+            }
+            updateData.project_id = project._id;
+        }
 
         // Validar que `owner_suite_id` exista si se proporciona
         if (owner_suite_id) {
@@ -37,12 +68,23 @@ exports.updateTestSuite = async (req, res) => {
             }
         }
 
+        // Validar Keywords
+        let keywordObjects = [];
+        if (keywords && keywords.length > 0) {
+            keywordObjects = await Keyword.find({ _id: { $in: keywords } });
+            if (keywordObjects.length !== keywords.length) {
+                return res.status(400).json({ message: "Algunos keywords no existen en la base de datos." });
+            }
+            updateData.keywords = keywordObjects.map(k => k._id);
+        }
+
         // Actualizar la Test Suite
         const updatedSuite = await TestSuite.findOneAndUpdate(
             { suite_id: req.params.id },
             updateData,
             { new: true }
-        );
+        ).populate('keywords', 'keyword_name');
+
         if (!updatedSuite) return res.status(404).json({ message: 'Test Suite no encontrada' });
 
         res.json(updatedSuite);
@@ -65,10 +107,14 @@ exports.deleteTestSuite = async (req, res) => {
     }
 };
 
-// ✅ **Obtener todas las Test Suites**
+// ✅ **Obtener todas las Test Suites con Keywords y Project_id correctamente referenciado**
 exports.getTestSuites = async (req, res) => {
     try {
-        const testSuites = await TestSuite.find().populate('created_by project_id');
+        const testSuites = await TestSuite.find()
+            .populate('created_by')
+            .populate('project_id', 'project_id project_name') // ✅ Muestra el `project_id` correlativo y el nombre del proyecto
+            .populate('keywords', 'keyword_name');
+
         res.json(testSuites);
     } catch (error) {
         console.error("❌ Error obteniendo Test Suites:", error);
@@ -76,10 +122,14 @@ exports.getTestSuites = async (req, res) => {
     }
 };
 
-// ✅ **Obtener una Test Suite por su ID**
+// ✅ **Obtener una Test Suite por su ID con Keywords y Project_id correctamente referenciado**
 exports.getTestSuiteById = async (req, res) => {
     try {
-        const testSuite = await TestSuite.findOne({ suite_id: req.params.id }).populate('created_by project_id');
+        const testSuite = await TestSuite.findOne({ suite_id: req.params.id })
+            .populate('created_by')
+            .populate('project_id', 'project_id project_name') // ✅ Muestra el `project_id` correlativo y el nombre del proyecto
+            .populate('keywords', 'keyword_name');
+
         if (!testSuite) return res.status(404).json({ message: 'Test Suite no encontrada' });
 
         res.json(testSuite);

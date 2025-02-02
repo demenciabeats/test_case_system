@@ -30,10 +30,11 @@ const RequirementSchema = new mongoose.Schema({
     testers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // ✅ Testers asignados
     celula: { type: mongoose.Schema.Types.ObjectId, ref: 'Celula' }, // Célula de desarrollo
     builds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Build' }], // Asociación con `build_id`
+    keywords: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Keyword' }], // ✅ Relación con Keywords
     external_id: { type: String, unique: true, sparse: true }, // ID externo para Jira u otros sistemas
     external_link: { type: String }, // ✅ Link a Jira u otro sistema externo
     sprints: [{ type: String }], // ✅ Relación con uno o más sprints
-    estimated_end_date: { type: Date }, // ✅ Fecha estimada de finalización (se pone manualmente)
+    estimated_end_date: { type: Date }, // ✅ Fecha estimada de finalización
     start_date: { type: Date }, // ✅ Fecha de inicio (cuando el estado cambia a QA)
     end_date: { type: Date } // ✅ Fecha de finalización (cuando el estado cambia a Aprobado o Rechazado)
 }, { timestamps: true });
