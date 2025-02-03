@@ -3,7 +3,9 @@ const Step = require('../models/Step');
 const Keyword = require('../models/Keyword');
 
 // ✅ **Crear un Step Group con al menos un Step**
+
 exports.createStepGroup = async (req, res) => {
+    console.log(req.body);
     try {
         const { name, description, created_by, keywords, steps } = req.body;
 

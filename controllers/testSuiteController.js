@@ -2,32 +2,50 @@ const TestSuite = require('../models/TestSuite');
 const Project = require('../models/Project');
 const Keyword = require('../models/Keyword');
 
-// ✅ **Crear una Test Suite con Validaciones**
 exports.createTestSuite = async (req, res) => {
     try {
+        console.log("📌 Recibido en createTestSuite:", req.body);
+
         const { suite_name, suite_description, owner_suite_id, project_id, keywords, suite_type, suite_status } = req.body;
 
         // 🔍 **Validar que el `project_id` exista**
+        console.log("🔍 Buscando Proyecto con ID:", project_id);
         const project = await Project.findOne({ project_id });
-        if (!project) return res.status(400).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
+        if (!project) {
+            console.log("❌ Proyecto no encontrado");
+            return res.status(400).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
+        }
 
         // 🔍 **Evitar `suite_name` duplicado en el mismo proyecto**
+        console.log("🔍 Verificando TestSuite duplicada en el proyecto");
         const existingSuite = await TestSuite.findOne({ suite_name: suite_name.trim(), project_id: project._id });
-        if (existingSuite) return res.status(400).json({ message: `La Test Suite '${suite_name}' ya existe en este proyecto.` });
+        if (existingSuite) {
+            console.log("❌ Ya existe una TestSuite con el mismo nombre");
+            return res.status(400).json({ message: `La Test Suite '${suite_name}' ya existe en este proyecto.` });
+        }
 
         // 🔍 **Validar que `owner_suite_id` exista si se proporciona**
         if (owner_suite_id) {
+            console.log("🔍 Buscando Owner Suite con ID:", owner_suite_id);
             const parentSuite = await TestSuite.findOne({ suite_id: owner_suite_id });
-            if (!parentSuite) return res.status(400).json({ message: `No se encontró la Test Suite con ID ${owner_suite_id}` });
+            if (!parentSuite) {
+                console.log("❌ Owner Suite no encontrada");
+                return res.status(400).json({ message: `No se encontró la Test Suite con ID ${owner_suite_id}` });
+            }
         }
 
         // 🔍 **Validar Keywords**
         let keywordObjects = [];
         if (keywords?.length) {
+            console.log("🔍 Buscando Keywords:", keywords);
             keywordObjects = await Keyword.find({ _id: { $in: keywords } });
-            if (keywordObjects.length !== keywords.length) return res.status(400).json({ message: "Algunas keywords no existen en la base de datos." });
+            if (keywordObjects.length !== keywords.length) {
+                console.log("❌ Algunas keywords no existen");
+                return res.status(400).json({ message: "Algunas keywords no existen en la base de datos." });
+            }
         }
 
+        console.log("✅ Creando Test Suite...");
         // ✅ **Crear la Test Suite**
         const newTestSuite = new TestSuite({
             suite_name: suite_name.trim(),
@@ -41,6 +59,7 @@ exports.createTestSuite = async (req, res) => {
         });
 
         await newTestSuite.save();
+        console.log("✅ Test Suite creada exitosamente:", newTestSuite);
         res.status(201).json(newTestSuite);
     } catch (error) {
         console.error("❌ Error creando Test Suite:", error);

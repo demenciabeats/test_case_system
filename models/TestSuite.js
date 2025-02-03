@@ -8,7 +8,7 @@ const TestSuiteSchema = new mongoose.Schema({
     suite_name: { type: String, required: true },
     suite_description: { type: String, required: true },
     owner_suite_id: { type: String, default: null, required: false }, // Permite jerarquía de suites
-    project_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true }, // ✅ Cambiado a ObjectId con `ref: 'Project'`
+    project_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     keywords: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Keyword' }], // ✅ Relación con Keywords
 
