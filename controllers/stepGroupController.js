@@ -249,3 +249,54 @@ exports.deleteStepGroup = async (req, res) => {
         res.status(500).json({ message: 'Error eliminando StepGroup', error });
     }
 };
+// ✅ **Eliminar uno o más Steps de un StepGroup y recalcular la numeración**
+exports.deleteStepsFromGroup = async (req, res) => {
+    try {
+        // Se espera recibir en el body:
+        // step_group_id: el correlativo del StepGroup (por ejemplo "STGRP-0001")
+        // step_ids: un array de IDs de los Steps a eliminar (por ejemplo: ["STGRP-0001-STEP-2", "STGRP-0001-STEP-4"])
+        const { step_group_id, step_ids } = req.body;
+        if (!step_group_id || !step_ids || !Array.isArray(step_ids) || step_ids.length === 0) {
+            return res.status(400).json({ message: "Debe proporcionar 'step_group_id' y un array 'step_ids' no vacío." });
+        }
+
+        // Buscar el StepGroup por su correlativo
+        const stepGroup = await StepGroup.findOne({ step_group_id });
+        if (!stepGroup) return res.status(404).json({ message: 'Step Group no encontrado' });
+
+        // Eliminar los Steps que tengan un step_id que esté en el array recibido
+        const stepsToDelete = await Step.find({ 
+            step_group: stepGroup._id,
+            step_id: { $in: step_ids }
+        });
+
+        if (stepsToDelete.length === 0) {
+            return res.status(404).json({ message: 'No se encontraron Steps para eliminar en este grupo' });
+        }
+
+        // Remover esos Steps de la colección
+        const deleteResult = await Step.deleteMany({ _id: { $in: stepsToDelete.map(s => s._id) } });
+
+        // Quitar los Steps eliminados del array 'steps' del StepGroup
+        stepGroup.steps = stepGroup.steps.filter(sid => !stepsToDelete.some(s => s._id.equals(sid)));
+        await stepGroup.save();
+
+        // Recuperar los Steps restantes en el grupo, ordenados por su step_number
+        const remainingSteps = await Step.find({ step_group: stepGroup._id }).sort({ step_number: 1 });
+
+        // Recalcular el número de paso y actualizar el step_id para cada uno
+        for (let i = 0; i < remainingSteps.length; i++) {
+            remainingSteps[i].step_number = i + 1;
+            remainingSteps[i].step_id = `${stepGroup.step_group_id}-STEP-${String(i + 1).padStart(2, '0')}`;
+            await remainingSteps[i].save();
+        }
+
+        res.json({ 
+            message: 'Steps eliminados y numeración recalculada correctamente', 
+            stepGroup 
+        });
+    } catch (error) {
+        console.error("❌ Error eliminando steps del grupo:", error);
+        res.status(500).json({ message: 'Error eliminando steps del grupo', error });
+    }
+};
