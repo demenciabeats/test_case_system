@@ -20,12 +20,12 @@ const app = express();
 
 connectDB();
 app.use(express.json());
-
+/*
 app.use((req, res, next) => {
     console.log(`🔍 Se recibió una solicitud: ${req.method} ${req.url}`);
     next();
 });
-
+*/
 app.use('/api/users', userRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/permissions', permissionRoutes);
