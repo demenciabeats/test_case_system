@@ -1,6 +1,15 @@
 const Build = require('../models/Build');
 const Keyword = require('../models/Keyword');
 
+// ✅ Función para validar valores ENUM
+const validateEnum = (value, validValues, fieldName) => {
+    if (value && !validValues.includes(value)) {
+        return `El valor '${value}' para '${fieldName}' no es válido. Valores permitidos: ${validValues.join(', ')}.`;
+    }
+    return null;
+};
+
+
 const validStatuses = ['Pendiente', 'En Ejecucion', 'Completada', 'Fallida'];
 const validOS = ["Windows", "OSX", "Linux", "Unix"];
 const validLanguages = [
@@ -14,8 +23,14 @@ const validExecutionEnvs = ['QA', 'Staging', 'Production', 'Develop'];
 // ✅ **Crear Build con validaciones y Keywords**
 exports.createBuild = async (req, res) => {
     try {
-        const { status, environment, keywords } = req.body;
+        const { build_name, status, environment, keywords } = req.body;
         let errors = [];
+
+        // 🔍 Verificar si ya existe una Build con el mismo nombre
+        const existingBuild = await Build.findOne({ build_name });
+        if (existingBuild) {
+            return res.status(400).json({ message: `Ya existe una Build con el nombre '${build_name}'.` });
+        }
 
         // Validaciones de ENUM
         if (status) {
@@ -60,16 +75,17 @@ exports.createBuild = async (req, res) => {
         await build.save();
         res.status(201).json(build);
     } catch (error) {
+        console.error("❌ Error creando Build:", error);
         res.status(500).json({ message: 'Error creando build', error });
     }
 };
 
-// ✅ **Obtener todas las Builds con salida optimizada y ordenada**
+// ✅ **Obtener todas las Builds con salida optimizada y keywords con ID y nombre**
 exports.getBuilds = async (req, res) => {
     try {
         const builds = await Build.find()
             .populate('created_by', 'username') // ✅ Solo ID y username
-            .populate('keywords', 'keyword_name') // ✅ Solo ID y nombre de las keywords
+            .populate('keywords', '_id keyword_name') // ✅ Solo ID y nombre de las keywords
             .select('-__v -updatedAt') // ✅ Excluir campos innecesarios
             .sort({ build_id: 1 }); // ✅ Ordenar por build_id
 
@@ -80,7 +96,10 @@ exports.getBuilds = async (req, res) => {
             status: build.status,
             environment: build.environment,
             created_by: build.created_by,
-            keywords: build.keywords,
+            keywords: build.keywords.map(k => ({
+                id: k._id,
+                name: k.keyword_name
+            })), // ✅ Agregar ID y nombre de cada keyword
             createdAt: build.createdAt
         }));
 
@@ -90,13 +109,12 @@ exports.getBuilds = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo builds', error });
     }
 };
-
-// ✅ **Obtener una Build por ID con salida optimizada y ordenada**
+// ✅ **Obtener una Build por ID con salida optimizada y keywords con ID y nombre**
 exports.getBuildById = async (req, res) => {
     try {
         const build = await Build.findOne({ build_id: req.params.id })
             .populate('created_by', 'username') // ✅ Solo ID y username
-            .populate('keywords', 'keyword_name') // ✅ Solo ID y nombre de las keywords
+            .populate('keywords', '_id keyword_name') // ✅ Solo ID y nombre de las keywords
             .select('-__v -updatedAt'); // ✅ Excluir campos innecesarios
 
         if (!build) return res.status(404).json({ message: 'Build no encontrada' });
@@ -108,7 +126,10 @@ exports.getBuildById = async (req, res) => {
             status: build.status,
             environment: build.environment,
             created_by: build.created_by,
-            keywords: build.keywords,
+            keywords: build.keywords.map(k => ({
+                id: k._id,
+                name: k.keyword_name
+            })), // ✅ Agregar ID y nombre de cada keyword
             createdAt: build.createdAt
         };
 
@@ -118,11 +139,17 @@ exports.getBuildById = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo build', error });
     }
 };
-// ✅ **Actualizar una Build incluyendo Keywords**
+// ✅ **Actualizar una Build incluyendo Keywords y validación de nombre duplicado**
 exports.updateBuild = async (req, res) => {
     try {
-        const { keywords, ...updateData } = req.body;
+        const { build_name, keywords, ...updateData } = req.body;
         let keywordObjects = [];
+
+        // 🔍 Verificar si el nuevo nombre de Build ya existe (excluyendo la Build actual)
+        const existingBuild = await Build.findOne({ build_name, _id: { $ne: req.params.id } });
+        if (existingBuild) {
+            return res.status(400).json({ message: `Ya existe una Build con el nombre '${build_name}'.` });
+        }
 
         if (keywords && keywords.length > 0) {
             keywordObjects = await Keyword.find({ _id: { $in: keywords } });
@@ -140,10 +167,10 @@ exports.updateBuild = async (req, res) => {
         if (!updatedBuild) return res.status(404).json({ message: 'Build no encontrada' });
         res.json(updatedBuild);
     } catch (error) {
+        console.error("❌ Error actualizando Build:", error);
         res.status(500).json({ message: 'Error actualizando build', error });
     }
 };
-
 // ✅ **Eliminar una Build**
 exports.deleteBuild = async (req, res) => {
     try {
