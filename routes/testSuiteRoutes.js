@@ -1,14 +1,21 @@
-/// routes/testSuiteRoutes.js
 const express = require('express');
-const { createTestSuite, updateTestSuite, deleteTestSuite, getTestSuites, getTestSuiteById } = require('../controllers/testSuiteController');
+const {
+    createStepGroup,
+    getStepGroups,
+    getStepGroupById,
+    updateStepGroup,
+    assignStepToGroup,
+    deleteStepGroup
+} = require('../controllers/stepGroupController');
+
 const { authMiddleware } = require('../middleware/authMiddleware');
 const router = express.Router();
 
-router.post('/', authMiddleware(['CREATE_TEST_SUITE']), createTestSuite);
-router.put('/:id', authMiddleware(['UPDATE_TEST_SUITE']), updateTestSuite);
-router.delete('/:id', authMiddleware(['DELETE_TEST_SUITE']), deleteTestSuite);
-router.get('/', authMiddleware(['READ_TEST_SUITE']), getTestSuites);
-router.get('/:id', authMiddleware(['READ_TEST_SUITE']), getTestSuiteById);
-
+router.post('/', authMiddleware(['CREATE_STEP_GROUP']), createStepGroup);
+router.get('/', authMiddleware(['READ_STEP_GROUP']), getStepGroups);
+router.get('/:id', authMiddleware(['READ_STEP_GROUP']), getStepGroupById);
+router.put('/:id', authMiddleware(['UPDATE_STEP_GROUP']), updateStepGroup);
+router.post('/assign', authMiddleware(['ASSIGN_STEP_TO_GROUP']), assignStepToGroup);
+router.delete('/:id', authMiddleware(['DELETE_STEP_GROUP']), deleteStepGroup);
 
 module.exports = router;
