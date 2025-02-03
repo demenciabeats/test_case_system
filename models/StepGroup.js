@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const StepGroupSchema = new mongoose.Schema({
-    step_group_id: { type: String, unique: true, immutable: true }, // STGRP-XXXX
+    step_group_id: { type: String, unique: true, immutable: true },
     name: { type: String, required: true, unique: true },
     description: { type: String, required: true },
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -19,5 +19,7 @@ StepGroupSchema.pre('save', async function (next) {
     }
     next();
 });
+
+// 🚨 **ELIMINADA** la validación en `pre('validate')`, ya que los Steps se agregan después en el controlador.
 
 module.exports = mongoose.model('StepGroup', StepGroupSchema);

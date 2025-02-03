@@ -1,66 +1,98 @@
 const Step = require('../models/Step');
 const StepGroup = require('../models/StepGroup');
 
-// ✅ **Crear un Step dentro de un StepGroup**
+// ✅ **Crear un Step dentro de un StepGroup, evitando duplicados**
 exports.createStep = async (req, res) => {
     try {
         const { step_group_id, action, expected_result } = req.body;
 
+        // 🔍 Validar que el StepGroup existe
         const stepGroup = await StepGroup.findOne({ step_group_id });
-        if (!stepGroup) return res.status(404).json({ message: 'Step Group no encontrado' });
+        if (!stepGroup) return res.status(404).json({ message: 'StepGroup no encontrado' });
 
-        // Obtener el último step_number dentro del grupo
+        // 🔍 Validar que el Step no exista con el mismo nombre dentro del grupo
+        const existingStep = await Step.findOne({ step_group: stepGroup._id, action: action.trim() });
+        if (existingStep) return res.status(400).json({ message: `El Step '${action}' ya existe en este grupo.` });
+
+        // 🔍 Obtener el último `step_number` del grupo
         const lastStep = await Step.findOne({ step_group: stepGroup._id }).sort({ step_number: -1 });
-        const newStepNumber = lastStep ? lastStep.step_number + 1 : 1;
+        const nextStepNumber = lastStep ? lastStep.step_number + 1 : 1;
 
-        const stepId = `${stepGroup.step_group_id}-STEP-${newStepNumber}`;
-
+        // ✅ Crear el Step
         const newStep = new Step({
-            step_id: stepId,
-            step_number: newStepNumber,
-            action,
-            expected_result,
-            step_group: stepGroup._id
+            step_id: `${stepGroup.step_group_id}-STEP-${nextStepNumber}`,
+            action: action.trim(),
+            expected_result: expected_result.trim(),
+            step_group: stepGroup._id,
+            step_number: nextStepNumber
         });
 
         await newStep.save();
+
+        // ✅ Agregar el Step al StepGroup
         stepGroup.steps.push(newStep._id);
         await stepGroup.save();
 
-        res.status(201).json(newStep);
+        res.status(201).json({
+            step_id: newStep.step_id,
+            step_number: newStep.step_number,
+            action: newStep.action,
+            expected_result: newStep.expected_result
+        });
     } catch (error) {
+        console.error("❌ Error creando Step:", error);
         res.status(500).json({ message: 'Error creando Step', error });
     }
 };
 
-// ✅ **Obtener todos los Steps**
+// ✅ **Obtener todos los Steps con formato ordenado**
 exports.getSteps = async (req, res) => {
     try {
         const steps = await Step.find()
             .populate('step_group', 'step_group_id name')
-            .sort({ step_number: 1 });
+            .sort({ step_number: 1 })
+            .lean();
 
-        res.json(steps);
+        if (!steps || steps.length === 0) {
+            return res.status(404).json({ message: 'No hay Steps disponibles' });
+        }
+
+        const formattedSteps = steps.map(step => ({
+            step_id: step.step_id,
+            step_number: step.step_number,
+            action: step.action,
+            expected_result: step.expected_result,
+            step_group: step.step_group ? { id: step.step_group.step_group_id, name: step.step_group.name } : null
+        }));
+
+        res.json(formattedSteps);
     } catch (error) {
         res.status(500).json({ message: 'Error obteniendo Steps', error });
     }
 };
 
-// ✅ **Obtener un Step por su correlativo**
+// ✅ **Obtener un Step por su correlativo con formato limpio**
 exports.getStepById = async (req, res) => {
     try {
         const step = await Step.findOne({ step_id: req.params.id })
-            .populate('step_group', 'step_group_id name');
+            .populate('step_group', 'step_group_id name')
+            .lean();
 
         if (!step) return res.status(404).json({ message: 'Step no encontrado' });
 
-        res.json(step);
+        res.json({
+            step_id: step.step_id,
+            step_number: step.step_number,
+            action: step.action,
+            expected_result: step.expected_result,
+            step_group: step.step_group ? { id: step.step_group.step_group_id, name: step.step_group.name } : null
+        });
     } catch (error) {
         res.status(500).json({ message: 'Error obteniendo Step', error });
     }
 };
 
-// ✅ **Actualizar un Step**
+// ✅ **Actualizar un Step con validación de duplicados**
 exports.updateStep = async (req, res) => {
     try {
         const { action, expected_result } = req.body;
@@ -68,11 +100,23 @@ exports.updateStep = async (req, res) => {
         let step = await Step.findOne({ step_id: req.params.id });
         if (!step) return res.status(404).json({ message: 'Step no encontrado' });
 
-        if (action) step.action = action;
-        if (expected_result) step.expected_result = expected_result;
+        // 🔍 Validar que el Step no exista con el mismo nombre dentro del grupo
+        if (action && action.trim() !== step.action) {
+            const existingStep = await Step.findOne({ step_group: step.step_group, action: action.trim() });
+            if (existingStep) return res.status(400).json({ message: `El Step '${action}' ya existe en este grupo.` });
+        }
+
+        if (action) step.action = action.trim();
+        if (expected_result) step.expected_result = expected_result.trim();
 
         await step.save();
-        res.json(step);
+
+        res.json({
+            step_id: step.step_id,
+            step_number: step.step_number,
+            action: step.action,
+            expected_result: step.expected_result
+        });
     } catch (error) {
         res.status(500).json({ message: 'Error actualizando Step', error });
     }
@@ -95,15 +139,32 @@ exports.deleteStep = async (req, res) => {
     }
 };
 
-// ✅ **Obtener Steps por StepGroup**
+// ✅ **Obtener Steps por StepGroup con formato limpio**
 exports.getStepsByGroup = async (req, res) => {
     try {
         const stepGroup = await StepGroup.findOne({ step_group_id: req.params.group_id });
         if (!stepGroup) return res.status(404).json({ message: 'Step Group no encontrado' });
 
-        const steps = await Step.find({ step_group: stepGroup._id }).sort({ step_number: 1 });
+        const steps = await Step.find({ step_group: stepGroup._id })
+            .sort({ step_number: 1 })
+            .lean();
 
-        res.json(steps);
+        if (!steps || steps.length === 0) {
+            return res.status(404).json({ message: 'No hay Steps en este grupo' });
+        }
+
+        const formattedSteps = steps.map(step => ({
+            step_id: step.step_id,
+            step_number: step.step_number,
+            action: step.action,
+            expected_result: step.expected_result
+        }));
+
+        res.json({
+            step_group_id: stepGroup.step_group_id,
+            step_group_name: stepGroup.name,
+            steps: formattedSteps
+        });
     } catch (error) {
         res.status(500).json({ message: 'Error obteniendo Steps del grupo', error });
     }

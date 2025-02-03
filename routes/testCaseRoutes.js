@@ -6,7 +6,8 @@ const {
     getTestCases,
     getTestCaseById,
     getTestCasesBySuite,
-    getTestCasesByProject // ✅ Nueva ruta
+    getTestCasesByProject,
+    assignStepGroupToTestCase // ✅ Nueva ruta
 } = require('../controllers/TestCaseController');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
@@ -20,5 +21,6 @@ router.get('/', authMiddleware(['READ_TEST_CASE']), getTestCases);
 router.get('/:id', authMiddleware(['READ_TEST_CASE']), getTestCaseById);
 router.get('/suite/:suiteId', authMiddleware(['READ_TEST_CASE']), getTestCasesBySuite);
 router.get('/project/:projectId', authMiddleware(['READ_TEST_CASE']), getTestCasesByProject); // ✅ Nueva ruta
+router.post('/assign-step-group', authMiddleware(['ASSIGN_STEP_GROUP']), assignStepGroupToTestCase);
 
 module.exports = router;
