@@ -79,7 +79,6 @@ exports.createBuild = async (req, res) => {
         res.status(500).json({ message: 'Error creando build', error });
     }
 };
-
 // ✅ **Obtener todas las Builds con salida optimizada y keywords con ID y nombre**
 exports.getBuilds = async (req, res) => {
     try {

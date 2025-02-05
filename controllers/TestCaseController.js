@@ -1,11 +1,8 @@
-
 const TestCase = require('../models/TestCase');
-const StepGroup = require('../models/StepGroup');
-
+// const StepGroup = require('../models/StepGroup'); // Eliminado por el momento. Referenciar para futura implementación.
 const Keyword = require('../models/Keyword');
 const Project = require('../models/Project');
 const TestSuite = require('../models/TestSuite');
-
 
 // Validaciones ENUM
 const validPriorities = ['Baja', 'Media', 'Alta', 'Crítica'];
@@ -20,29 +17,44 @@ const validateEnum = (value, validValues, fieldName) => {
     }
     return null;
 };
-// ✅ **Crear un TestCase**
+
+// ✅ Crear un TestCase con validación de nombre único dentro de una Test Suite
 exports.createTestCase = async (req, res) => {
     try {
-        const { title, description, priority, status, test_type, automation_status, suite_id, project_id, expected_result, duration_in_minutes, tester_occupation, keywords, step_groups } = req.body;
+        // Se ha eliminado la variable 'step_groups' del destructuring
+        const { title, description, priority, status, test_type, automation_status, suite_id, project_id, expected_result, duration_in_minutes, tester_occupation, keywords } = req.body;
         let errors = [];
 
-        // Validaciones ENUM
+        // 🔍 Validaciones ENUM
         errors.push(validateEnum(priority, validPriorities, 'priority'));
         errors.push(validateEnum(status, validStatuses, 'status'));
         errors.push(validateEnum(test_type, validTestTypes, 'test_type'));
         errors.push(validateEnum(automation_status, validAutomationStatuses, 'automation_status'));
         errors = errors.filter(error => error !== null);
 
-        if (errors.length > 0) return res.status(400).json({ message: 'Errores en la validación de datos', errors });
+        if (errors.length > 0) {
+            return res.status(400).json({ message: 'Errores en la validación de datos', errors });
+        }
 
-        // Validación de Proyecto y TestSuite
+        // 🔍 Validación de Proyecto
         const project = await Project.findOne({ project_id });
-        if (!project) return res.status(400).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
+        if (!project) {
+            return res.status(400).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
+        }
 
+        // 🔍 Validación de TestSuite
         const suite = await TestSuite.findOne({ suite_id });
-        if (!suite) return res.status(400).json({ message: `No se encontró la Test Suite con ID ${suite_id}` });
+        if (!suite) {
+            return res.status(400).json({ message: `No se encontró la Test Suite con ID ${suite_id}` });
+        }
 
-        // Validación de Keywords
+        // 🔍 Validar que no exista un TestCase con el mismo nombre en la misma TestSuite
+        const existingTestCase = await TestCase.findOne({ title: title.trim(), suite_id });
+        if (existingTestCase) {
+            return res.status(400).json({ message: `Ya existe un TestCase con el nombre '${title}' en la Test Suite '${suite_id}'` });
+        }
+
+        // 🔍 Validación de Keywords
         let keywordObjects = [];
         if (keywords && keywords.length > 0) {
             keywordObjects = await Keyword.find({ _id: { $in: keywords } });
@@ -51,18 +63,9 @@ exports.createTestCase = async (req, res) => {
             }
         }
 
-        // Validación de StepGroups
-        let stepGroupObjects = [];
-        if (step_groups && step_groups.length > 0) {
-            stepGroupObjects = await StepGroup.find({ step_group_id: { $in: step_groups } });
-            if (stepGroupObjects.length !== step_groups.length) {
-                return res.status(400).json({ message: "Algunos StepGroups no existen en la base de datos." });
-            }
-        }
-
-        // Crear el TestCase
+        // ✅ Crear el TestCase
         const newTestCase = new TestCase({
-            title,
+            title: title.trim(),
             description,
             priority,
             status,
@@ -74,45 +77,107 @@ exports.createTestCase = async (req, res) => {
             duration_in_minutes,
             tester_occupation,
             created_by: req.user.id,
-            keywords: keywordObjects.map(k => k._id),
-            step_groups: stepGroupObjects.map(g => g._id)
+            keywords: keywordObjects.map(k => k._id)
+            // Nota: Se ha eliminado el campo 'step_groups' por el momento.
         });
 
         await newTestCase.save();
 
-        res.status(201).json(newTestCase);
+        res.status(201).json({
+            message: "TestCase creado exitosamente.",
+            testCase: {
+                testcase_id: newTestCase.testcase_id,
+                title: newTestCase.title,
+                description: newTestCase.description,
+                priority: newTestCase.priority,
+                status: newTestCase.status,
+                test_type: newTestCase.test_type,
+                automation_status: newTestCase.automation_status,
+                suite_id: newTestCase.suite_id,
+                project_id: newTestCase.project_id,
+                expected_result: newTestCase.expected_result,
+                duration_in_minutes: newTestCase.duration_in_minutes,
+                tester_occupation: newTestCase.tester_occupation,
+                created_by: newTestCase.created_by,
+                keywords: keywordObjects.map(k => ({ _id: k._id, name: k.keyword_name })),
+                createdAt: newTestCase.createdAt
+            }
+        });
     } catch (error) {
+        console.error("❌ Error creando TestCase:", error);
         res.status(500).json({ message: 'Error creando TestCase', error });
     }
 };
-// ✅ **Obtener todos los TestCases**
+
+// ✅ Obtener todos los TestCases
 exports.getTestCases = async (req, res) => {
     try {
         const testCases = await TestCase.find()
             .populate('created_by', 'username')
-            .populate('keywords', 'keyword_name')
-            .populate('step_groups', 'name step_group_id');
+            .populate('keywords', 'keyword_name');
 
-        res.json(testCases);
+        // 🔍 Reformatear la salida para mejor estructura
+        const formattedTestCases = testCases.map(tc => ({
+            testcase_id: tc.testcase_id,
+            title: tc.title,
+            description: tc.description,
+            priority: tc.priority,
+            status: tc.status,
+            test_type: tc.test_type,
+            automation_status: tc.automation_status,
+            suite_id: tc.suite_id,
+            project_id: tc.project_id,
+            expected_result: tc.expected_result,
+            duration_in_minutes: tc.duration_in_minutes,
+            tester_occupation: tc.tester_occupation,
+            created_by: tc.created_by ? { _id: tc.created_by._id, username: tc.created_by.username } : null,
+            keywords: tc.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
+            createdAt: tc.createdAt
+        }));
+
+        res.json(formattedTestCases);
     } catch (error) {
+        console.error("❌ Error obteniendo TestCases:", error);
         res.status(500).json({ message: 'Error obteniendo TestCases', error });
     }
 };
-// ✅ **Obtener un TestCase por ID**
+
+// ✅ Obtener un TestCase por ID
 exports.getTestCaseById = async (req, res) => {
     try {
         const testCase = await TestCase.findOne({ testcase_id: req.params.id })
             .populate('created_by', 'username')
-            .populate('keywords', 'keyword_name')
-            .populate('step_groups', 'name step_group_id');
+            .populate('keywords', 'keyword_name');
 
-        if (!testCase) return res.status(404).json({ message: 'TestCase no encontrado' });
+        if (!testCase) {
+            return res.status(404).json({ message: 'TestCase no encontrado' });
+        }
 
-        res.json(testCase);
+        const formattedTestCase = {
+            testcase_id: testCase.testcase_id,
+            title: testCase.title,
+            description: testCase.description,
+            priority: testCase.priority,
+            status: testCase.status,
+            test_type: testCase.test_type,
+            automation_status: testCase.automation_status,
+            suite_id: testCase.suite_id,
+            project_id: testCase.project_id,
+            expected_result: testCase.expected_result,
+            duration_in_minutes: testCase.duration_in_minutes,
+            tester_occupation: testCase.tester_occupation,
+            created_by: testCase.created_by ? { _id: testCase.created_by._id, username: testCase.created_by.username } : null,
+            keywords: testCase.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
+            createdAt: testCase.createdAt
+        };
+
+        res.json(formattedTestCase);
     } catch (error) {
+        console.error("❌ Error obteniendo TestCase:", error);
         res.status(500).json({ message: 'Error obteniendo TestCase', error });
     }
 };
+
 // Obtener TestCases por TestSuite (usando correlativo)
 exports.getTestCasesBySuite = async (req, res) => {
     try {
@@ -136,7 +201,8 @@ exports.getTestCasesBySuite = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo TestCases por TestSuite', error });
     }
 };
-// Obtener TestCases por Proyecto (usando correlativo)
+
+// ✅ Obtener TestCases por Proyecto
 exports.getTestCasesByProject = async (req, res) => {
     try {
         const { projectId } = req.params;
@@ -150,22 +216,73 @@ exports.getTestCasesByProject = async (req, res) => {
         // 🔍 Obtener TestCases del Proyecto
         const testCases = await TestCase.find({ project_id: projectId })
             .populate('created_by', 'username')
-            .populate('keywords', 'keyword_name')
-            .select('testcase_id title priority status test_type automation_status project_id created_at');
+            .populate('keywords', 'keyword_name');
 
-        res.json(testCases);
+        // 🔍 Reformatear la salida para mejor estructura
+        const formattedTestCases = testCases.map(tc => ({
+            testcase_id: tc.testcase_id,
+            title: tc.title,
+            description: tc.description,
+            priority: tc.priority,
+            status: tc.status,
+            test_type: tc.test_type,
+            automation_status: tc.automation_status,
+            project_id: tc.project_id,
+            suite_id: tc.suite_id,
+            expected_result: tc.expected_result,
+            duration_in_minutes: tc.duration_in_minutes,
+            tester_occupation: tc.tester_occupation,
+            created_by: tc.created_by ? { _id: tc.created_by._id, username: tc.created_by.username } : null,
+            keywords: tc.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
+            createdAt: tc.createdAt
+        }));
+
+        res.json(formattedTestCases);
     } catch (error) {
         console.error("❌ Error obteniendo TestCases por Proyecto:", error);
         res.status(500).json({ message: 'Error obteniendo TestCases por Proyecto', error });
     }
 };
-// ✅ **Actualizar un TestCase**
+
+// ✅ Actualizar un TestCase con validación de nombre único dentro de una Test Suite
 exports.updateTestCase = async (req, res) => {
     try {
-        const { keywords, step_groups, ...updateData } = req.body;
+        // Se ha eliminado 'step_groups' del destructuring
+        const { title, suite_id, keywords, ...updateData } = req.body;
         let keywordObjects = [];
-        let stepGroupObjects = [];
 
+        // 🔍 Verificar si el TestCase existe
+        const existingTestCase = await TestCase.findOne({ testcase_id: req.params.id });
+        if (!existingTestCase) {
+            return res.status(404).json({ message: `TestCase con ID '${req.params.id}' no encontrado` });
+        }
+
+        // 🔍 Validación de TestSuite (si se actualiza)
+        if (suite_id && suite_id !== existingTestCase.suite_id) {
+            const suiteExists = await TestSuite.findOne({ suite_id });
+            if (!suiteExists) {
+                return res.status(400).json({ message: `No se encontró la Test Suite con ID '${suite_id}'` });
+            }
+            updateData.suite_id = suite_id;
+        }
+
+        // 🔍 Verificar si otro TestCase en la misma Test Suite ya tiene este nombre
+        if (title && title.trim() !== existingTestCase.title) {
+            const duplicateTestCase = await TestCase.findOne({
+                title: title.trim(),
+                suite_id: suite_id || existingTestCase.suite_id, // Si no se cambia, usar el original
+                testcase_id: { $ne: req.params.id } // Excluir el actual
+            });
+
+            if (duplicateTestCase) {
+                return res.status(400).json({
+                    message: `Ya existe un TestCase con el nombre '${title}' en la Test Suite '${suite_id || existingTestCase.suite_id}'`
+                });
+            }
+            updateData.title = title.trim();
+        }
+
+        // 🔍 Validación de Keywords (si se actualizan)
         if (keywords && keywords.length > 0) {
             keywordObjects = await Keyword.find({ _id: { $in: keywords } });
             if (keywordObjects.length !== keywords.length) {
@@ -174,63 +291,56 @@ exports.updateTestCase = async (req, res) => {
             updateData.keywords = keywordObjects.map(k => k._id);
         }
 
-        if (step_groups && step_groups.length > 0) {
-            stepGroupObjects = await StepGroup.find({ step_group_id: { $in: step_groups } });
-            if (stepGroupObjects.length !== step_groups.length) {
-                return res.status(400).json({ message: "Algunos StepGroups no existen en la base de datos." });
-            }
-            updateData.step_groups = stepGroupObjects.map(g => g._id);
-        }
-
+        // ✅ Actualizar el TestCase
         const updatedTestCase = await TestCase.findOneAndUpdate(
             { testcase_id: req.params.id },
             updateData,
             { new: true }
-        ).populate('keywords', 'keyword_name')
-         .populate('step_groups', 'name step_group_id');
+        ).populate('keywords', 'keyword_name');
 
-        if (!updatedTestCase) return res.status(404).json({ message: 'TestCase no encontrado' });
+        if (!updatedTestCase) {
+            return res.status(404).json({ message: 'TestCase no encontrado' });
+        }
 
-        res.json(updatedTestCase);
+        res.json({
+            message: "TestCase actualizado exitosamente.",
+            testCase: {
+                testcase_id: updatedTestCase.testcase_id,
+                title: updatedTestCase.title,
+                description: updatedTestCase.description,
+                priority: updatedTestCase.priority,
+                status: updatedTestCase.status,
+                test_type: updatedTestCase.test_type,
+                automation_status: updatedTestCase.automation_status,
+                suite_id: updatedTestCase.suite_id,
+                project_id: updatedTestCase.project_id,
+                expected_result: updatedTestCase.expected_result,
+                duration_in_minutes: updatedTestCase.duration_in_minutes,
+                tester_occupation: updatedTestCase.tester_occupation,
+                created_by: updatedTestCase.created_by,
+                keywords: keywordObjects.map(k => ({ _id: k._id, name: k.keyword_name })),
+                updatedAt: updatedTestCase.updatedAt
+            }
+        });
     } catch (error) {
+        console.error("❌ Error actualizando TestCase:", error);
         res.status(500).json({ message: 'Error actualizando TestCase', error });
     }
 };
+
 // Eliminar un TestCase
 exports.deleteTestCase = async (req, res) => {
     try {
         const deletedTestCase = await TestCase.findOneAndDelete({ testcase_id: req.params.id });
-        if (!deletedTestCase) return res.status(404).json({ message: 'TestCase no encontrado' });
+        if (!deletedTestCase) {
+            return res.status(404).json({ message: 'TestCase no encontrado' });
+        }
 
         res.json({ message: 'TestCase eliminado correctamente' });
     } catch (error) {
         res.status(500).json({ message: 'Error eliminando TestCase', error });
     }
 };
-// ✅ **Asignar un StepGroup a un TestCase**
-exports.assignStepGroupToTestCase = async (req, res) => {
-    try {
-        const { testcase_id, step_group_id } = req.body;
 
-        // Validar que el TestCase existe
-        const testCase = await TestCase.findOne({ testcase_id });
-        if (!testCase) return res.status(404).json({ message: 'TestCase no encontrado' });
-
-        // Validar que el StepGroup existe
-        const stepGroup = await StepGroup.findOne({ step_group_id });
-        if (!stepGroup) return res.status(404).json({ message: 'StepGroup no encontrado' });
-
-        // Verificar si el StepGroup ya está asignado
-        if (testCase.step_groups.includes(stepGroup._id)) {
-            return res.status(400).json({ message: 'StepGroup ya asignado a este TestCase' });
-        }
-
-        // Asignar el StepGroup
-        testCase.step_groups.push(stepGroup._id);
-        await testCase.save();
-
-        res.json({ message: 'StepGroup asignado correctamente', testCase });
-    } catch (error) {
-        res.status(500).json({ message: 'Error asignando StepGroup', error });
-    }
-};
+// Nota: Se ha eliminado la función 'assignStepGroupToTestCase' ya que las relaciones con StepGroup y Step se removerán por ahora.
+// Para una futura implementación, considera agregar una función que asocie StepGroups a un TestCase.

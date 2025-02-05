@@ -6,8 +6,7 @@ const {
     getTestCases,
     getTestCaseById,
     getTestCasesBySuite,
-    getTestCasesByProject,
-    assignStepGroupToTestCase // ✅ Nueva ruta
+    getTestCasesByProject // ✅ Nueva ruta
 } = require('../controllers/TestCaseController');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
@@ -20,7 +19,7 @@ router.delete('/:id', authMiddleware(['DELETE_TEST_CASE']), deleteTestCase);
 router.get('/', authMiddleware(['READ_TEST_CASE']), getTestCases);
 router.get('/:id', authMiddleware(['READ_TEST_CASE']), getTestCaseById);
 router.get('/suite/:suiteId', authMiddleware(['READ_TEST_CASE']), getTestCasesBySuite);
-router.get('/project/:projectId', authMiddleware(['READ_TEST_CASE']), getTestCasesByProject); // ✅ Nueva ruta
-router.post('/assign-step-group', authMiddleware(['ASSIGN_STEP_GROUP']), assignStepGroupToTestCase);
+router.get('/project/:projectId', authMiddleware(['READ_TEST_CASE']), getTestCasesByProject);
+
 
 module.exports = router;

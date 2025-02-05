@@ -21,13 +21,15 @@ const TestCaseSchema = new mongoose.Schema({
     tester_occupation: { type: Number, default: 1 },
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     keywords: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Keyword' }],
-    step_groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StepGroup' }]
+    // Se han eliminado las relaciones con StepGroup y Step por el momento.
+    // Para una futura implementación, podrías considerar agregar:
+    // step_groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StepGroup' }]
 }, { timestamps: true });
 
 // ✅ Generador Correlativo de `testcase_id`
 TestCaseSchema.pre('save', async function (next) {
     if (!this.testcase_id) {
-        // Obtener el último TestCase ordenado por `testcase_id`
+        // Obtener el último TestCase ordenado por `createdAt` de forma descendente
         const lastTestCase = await mongoose.model('TestCase').findOne().sort({ createdAt: -1 });
 
         let nextNumber = 1;

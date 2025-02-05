@@ -4,47 +4,30 @@ const StepGroup = require('../models/StepGroup');
 // ✅ **Crear un Step dentro de un StepGroup, evitando duplicados**
 exports.createStep = async (req, res) => {
     try {
-        const { step_group_id, action, expected_result } = req.body;
+        const { description, expected_result, order, step_group_id } = req.body;
 
-        // 🔍 Validar que el StepGroup existe
+        // Verificar si el grupo de pasos existe
         const stepGroup = await StepGroup.findOne({ step_group_id });
-        if (!stepGroup) return res.status(404).json({ message: 'StepGroup no encontrado' });
+        if (!stepGroup) {
+            return res.status(404).json({ message: `No se encontró el Step Group con ID ${step_group_id}` });
+        }
 
-        // 🔍 Validar que el Step no exista con el mismo nombre dentro del grupo
-        const existingStep = await Step.findOne({ step_group: stepGroup._id, action: action.trim() });
-        if (existingStep) return res.status(400).json({ message: `El Step '${action}' ya existe en este grupo.` });
-
-        // 🔍 Obtener el último `step_number` del grupo
-        const lastStep = await Step.findOne({ step_group: stepGroup._id }).sort({ step_number: -1 });
-        const nextStepNumber = lastStep ? lastStep.step_number + 1 : 1;
-
-        // ✅ Crear el Step
+        // ✅ Crear el Step sin definir `step_id` (se genera automáticamente en `pre('save')`)
         const newStep = new Step({
-            step_id: `${stepGroup.step_group_id}-STEP-${nextStepNumber}`,
-            action: action.trim(),
-            expected_result: expected_result.trim(),
-            step_group: stepGroup._id,
-            step_number: nextStepNumber
+            description,
+            expected_result,
+            order,
+            step_group: stepGroup._id
         });
 
         await newStep.save();
 
-        // ✅ Agregar el Step al StepGroup
-        stepGroup.steps.push(newStep._id);
-        await stepGroup.save();
-
-        res.status(201).json({
-            step_id: newStep.step_id,
-            step_number: newStep.step_number,
-            action: newStep.action,
-            expected_result: newStep.expected_result
-        });
+        res.status(201).json({ message: 'Step creado exitosamente.', step: newStep });
     } catch (error) {
         console.error("❌ Error creando Step:", error);
         res.status(500).json({ message: 'Error creando Step', error });
     }
 };
-
 // ✅ **Obtener todos los Steps con formato ordenado**
 exports.getSteps = async (req, res) => {
     try {

@@ -52,38 +52,97 @@ const validateEnum = (value, validValues, fieldName) => {
     return null;
 };
 
-// ✅ **Crear un Proyecto (Validación de nombre único)**
 exports.createProject = async (req, res) => {
     try {
-        const { project_name, project_category, business_model, security_level, execution_platform, maintenance_status, priority, complexity } = req.body;
+        const { project_name, product_manager, keywords, celula, ...projectData } = req.body;
+        let errors = [];
 
-        // ✅ Validar si el nombre del proyecto ya existe
+        // 🔍 **Verificar si el nombre ya existe**
         const existingProject = await Project.findOne({ project_name: project_name.trim() });
         if (existingProject) {
             return res.status(400).json({ message: `El proyecto con nombre '${project_name}' ya existe.` });
         }
 
-        // 🔍 Validaciones de ENUMS
-        let errors = [];
-        if (project_category) errors.push(validateEnum(project_category, validProjectCategories, 'project_category'));
-        if (business_model) errors.push(validateEnum(business_model, validBusinessModels, 'business_model'));
-        if (security_level) errors.push(validateEnum(security_level, validSecurityLevels, 'security_level'));
-        if (execution_platform) errors.push(validateEnum(execution_platform, validExecutionPlatforms, 'execution_platform'));
-        if (maintenance_status) errors.push(validateEnum(maintenance_status, validMaintenanceStatuses, 'maintenance_status'));
-        if (priority) errors.push(validateEnum(priority, validPriorities, 'priority'));
-        if (complexity) errors.push(validateEnum(complexity, validComplexities, 'complexity'));
+        // 🔍 **Validar que `product_manager` no sea vacío o undefined**
+        if (!product_manager) {
+            errors.push("El campo 'product_manager' es obligatorio.");
+        } else {
+            // 🔍 **Validar si el product_manager existe en la BD**
+            const existingManager = await User.findById(product_manager);
+            if (!existingManager) {
+                errors.push(`No se encontró el Product Manager con ID '${product_manager}'.`);
+            }
+        }
 
-        errors = errors.filter(error => error !== null);
-        if (errors.length > 0) return res.status(400).json({ message: 'Errores en la validación de datos', errors });
+        // 🔍 **Validar `keywords` si se proporcionan**
+        let keywordObjects = [];
+        if (Array.isArray(keywords) && keywords.length > 0) {
+            keywordObjects = await Keyword.find({ _id: { $in: keywords } });
+            if (keywordObjects.length !== keywords.length) {
+                errors.push("Algunas keywords no existen en la base de datos.");
+            }
+        }
 
-        // ✅ Crear el proyecto
-        const project = new Project({ ...req.body, created_by: req.user.id });
+        // 🔍 **Validar `celula` si se proporciona**
+        if (celula) {
+            const existingCelula = await Celula.findById(celula);
+            if (!existingCelula) {
+                errors.push(`No se encontró la célula con ID '${celula}'.`);
+            }
+        }
+
+        // 🚨 **Si hay errores, retornarlos antes de guardar**
+        if (errors.length > 0) {
+            return res.status(400).json({ message: "Errores en la validación de datos", errors });
+        }
+
+        // ✅ **Crear el proyecto**
+        const project = new Project({
+            ...projectData,
+            project_name: project_name.trim(),
+            product_manager,
+            keywords: keywordObjects.map(k => k._id),
+            celula,
+            created_by: req.user.id
+        });
+
         await project.save();
-        res.status(201).json(project);
+
+        // ✅ **Obtener el proyecto con sus relaciones**
+        const fullProject = await Project.findOne({ project_id: project.project_id })
+            .populate('created_by', '_id username')
+            .populate('product_manager', '_id username')
+            .populate('celula', '_id celula_name')
+            .populate('keywords', '_id keyword_name')
+            .select('-__v -updatedAt');
+
+        // ✅ **Salida estructurada**
+        res.status(201).json({
+            project_id: fullProject.project_id,
+            project_name: fullProject.project_name,
+            description: fullProject.description,
+            created_by: fullProject.created_by ? { _id: fullProject.created_by._id, username: fullProject.created_by.username } : null,
+            product_manager: fullProject.product_manager ? { _id: fullProject.product_manager._id, username: fullProject.product_manager.username } : null,
+            celula: fullProject.celula ? { _id: fullProject.celula._id, name: fullProject.celula.celula_name } : null,
+            keywords: fullProject.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
+            project_category: fullProject.project_category,
+            technologies: fullProject.technologies,
+            business_model: fullProject.business_model,
+            security_level: fullProject.security_level,
+            execution_platform: fullProject.execution_platform,
+            maintenance_status: fullProject.maintenance_status,
+            priority: fullProject.priority,
+            complexity: fullProject.complexity,
+            is_active: fullProject.is_active,
+            created_at: fullProject.createdAt
+        });
+
     } catch (error) {
-        res.status(500).json({ message: 'Error creando proyecto', error });
+        console.error("❌ Error creando proyecto:", error);
+        res.status(500).json({ message: "Error creando proyecto", error });
     }
 };
+
 // ✅ **Actualizar un Proyecto con validaciones**
 exports.updateProject = async (req, res) => {
     try {

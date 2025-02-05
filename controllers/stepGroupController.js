@@ -198,11 +198,11 @@ exports.assignStepToGroup = async (req, res) => {
     try {
         const { step_group_id, action, expected_result } = req.body;
 
-        // 🔍 **Buscar el StepGroup**
+        // Buscar el StepGroup
         const stepGroup = await StepGroup.findOne({ step_group_id }).populate('steps');
         if (!stepGroup) return res.status(404).json({ message: 'Step Group no encontrado' });
 
-        // 🔍 **Evitar duplicados: Mismo Step ya en el grupo**
+        // Evitar duplicados de acción en el grupo
         const existingStep = stepGroup.steps.find(
             step => step.action.trim().toLowerCase() === action.trim().toLowerCase()
         );
@@ -211,14 +211,18 @@ exports.assignStepToGroup = async (req, res) => {
             return res.status(400).json({ message: `El Step con acción '${action}' ya existe en este grupo.` });
         }
 
-        // 🔍 **Obtener el último número de Step en el grupo**
-        const lastStep = await Step.findOne({ step_group: stepGroup._id }).sort({ step_number: -1 });
-        const newStepNumber = lastStep ? lastStep.step_number + 1 : 1;
+        // Obtener el primer número de Step disponible
+        const steps = await Step.find({ step_group: stepGroup._id }).sort({ step_number: 1 });
+        let usedNumbers = steps.map(step => step.step_number);
+        let stepNumber = 1;
+        while (usedNumbers.includes(stepNumber)) {
+            stepNumber++;
+        }
 
-        // ✅ **Crear el nuevo Step**
+        // Crear el nuevo Step
         const newStep = new Step({
-            step_id: `${stepGroup.step_group_id}-STEP-${newStepNumber}`,
-            step_number: newStepNumber,
+            step_id: `${stepGroup.step_group_id}-STEP-${String(stepNumber).padStart(2, '0')}`,
+            step_number: stepNumber,
             action: action.trim(),
             expected_result: expected_result.trim(),
             step_group: stepGroup._id
@@ -226,7 +230,7 @@ exports.assignStepToGroup = async (req, res) => {
 
         await newStep.save();
 
-        // 🔗 **Asociar el nuevo Step al grupo**
+        // Asociar el Step al StepGroup
         stepGroup.steps.push(newStep._id);
         await stepGroup.save();
 
@@ -236,6 +240,7 @@ exports.assignStepToGroup = async (req, res) => {
         res.status(500).json({ message: 'Error asignando Step', error });
     }
 };
+
 // ✅ **Eliminar StepGroup y Steps Asociados**
 exports.deleteStepGroup = async (req, res) => {
     try {
@@ -254,19 +259,17 @@ exports.deleteStepGroup = async (req, res) => {
 // ✅ **Eliminar uno o más Steps de un StepGroup y recalcular la numeración**
 exports.deleteStepsFromGroup = async (req, res) => {
     try {
-        // Se espera recibir en el body:
-        // step_group_id: el correlativo del StepGroup (por ejemplo "STGRP-0001")
-        // step_ids: un array de IDs de los Steps a eliminar (por ejemplo: ["STGRP-0001-STEP-2", "STGRP-0001-STEP-4"])
         const { step_group_id, step_ids } = req.body;
+
         if (!step_group_id || !step_ids || !Array.isArray(step_ids) || step_ids.length === 0) {
-            return res.status(400).json({ message: "Debe proporcionar 'step_group_id' y un array 'step_ids' no vacío." });
+            return res.status(400).json({ message: "Debe proporcionar 'step_group_id' y un array 'step_ids' válido." });
         }
 
         // Buscar el StepGroup por su correlativo
         const stepGroup = await StepGroup.findOne({ step_group_id });
         if (!stepGroup) return res.status(404).json({ message: 'Step Group no encontrado' });
 
-        // Eliminar los Steps que tengan un step_id que esté en el array recibido
+        // Obtener los Steps a eliminar
         const stepsToDelete = await Step.find({ 
             step_group: stepGroup._id,
             step_id: { $in: step_ids }
@@ -276,17 +279,17 @@ exports.deleteStepsFromGroup = async (req, res) => {
             return res.status(404).json({ message: 'No se encontraron Steps para eliminar en este grupo' });
         }
 
-        // Remover esos Steps de la colección
-        const deleteResult = await Step.deleteMany({ _id: { $in: stepsToDelete.map(s => s._id) } });
+        // Eliminar los Steps de la base de datos
+        await Step.deleteMany({ _id: { $in: stepsToDelete.map(s => s._id) } });
 
-        // Quitar los Steps eliminados del array 'steps' del StepGroup
+        // Actualizar la lista de Steps en el StepGroup
         stepGroup.steps = stepGroup.steps.filter(sid => !stepsToDelete.some(s => s._id.equals(sid)));
         await stepGroup.save();
 
-        // Recuperar los Steps restantes en el grupo, ordenados por su step_number
+        // Obtener los Steps restantes ordenados por `step_number`
         const remainingSteps = await Step.find({ step_group: stepGroup._id }).sort({ step_number: 1 });
 
-        // Recalcular el número de paso y actualizar el step_id para cada uno
+        // Reasignar números de Step y corregir `step_id`
         for (let i = 0; i < remainingSteps.length; i++) {
             remainingSteps[i].step_number = i + 1;
             remainingSteps[i].step_id = `${stepGroup.step_group_id}-STEP-${String(i + 1).padStart(2, '0')}`;
@@ -298,7 +301,7 @@ exports.deleteStepsFromGroup = async (req, res) => {
             stepGroup 
         });
     } catch (error) {
-        console.error("❌ Error eliminando steps del grupo:", error);
-        res.status(500).json({ message: 'Error eliminando steps del grupo', error });
+        console.error("❌ Error eliminando Steps del grupo:", error);
+        res.status(500).json({ message: 'Error eliminando Steps del grupo', error });
     }
 };

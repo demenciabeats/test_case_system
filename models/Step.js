@@ -8,16 +8,40 @@ const StepSchema = new mongoose.Schema({
     step_group: { type: mongoose.Schema.Types.ObjectId, ref: 'StepGroup', required: true }
 }, { timestamps: true });
 
-// ✅ Generador automático de `step_id` con formato `STGRP-XXXX-STEP-XX`
 StepSchema.pre('save', async function (next) {
-    if (!this.step_id) {
-        const lastStep = await mongoose.model('Step').findOne({ step_group: this.step_group }).sort({ step_number: -1 });
-        const nextNumber = lastStep ? lastStep.step_number + 1 : 1;
+    try {
+        if (!this.isNew) return next(); // Si no es nuevo, no recalcular
 
-        this.step_number = nextNumber;
-        this.step_id = `STGRP-${this.step_group}-STEP-${String(nextNumber).padStart(2, '0')}`;
+        // Buscar el StepGroup asociado
+        const stepGroup = await mongoose.model('StepGroup').findOne({ _id: this.step_group });
+        if (!stepGroup) {
+            return next(new Error('Step Group no encontrado'));
+        }
+
+        // Obtener los Steps existentes en el grupo ordenados por número
+        const steps = await mongoose.model('Step')
+            .find({ step_group: this.step_group })
+            .sort({ step_number: 1 });
+
+        // Obtener los números de paso usados
+        let usedNumbers = steps.map(step => step.step_number);
+
+        // Encontrar el primer número disponible en la secuencia
+        let stepNumber = 1;
+        while (usedNumbers.includes(stepNumber)) {
+            stepNumber++;
+        }
+
+        // Asignar `step_number` y `step_id`
+        this.step_number = stepNumber;
+        this.step_id = `${stepGroup.step_group_id}-STEP-${String(stepNumber).padStart(2, '0')}`;
+
+        next();
+    } catch (error) {
+        next(error);
     }
-    next();
 });
+
+
 
 module.exports = mongoose.model('Step', StepSchema);

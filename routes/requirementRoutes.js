@@ -8,7 +8,8 @@ const {
     getRequirements,
     getRequirementById,
     getRequirementByExternalId,
-    addBuildToRequirement
+    addBuildsToRequirement,
+    removeBuildsFromRequirement
 } = require('../controllers/requirementController');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
@@ -33,7 +34,13 @@ router.get('/:id', authMiddleware(['READ_REQUIREMENT']), getRequirementById);
 router.get('/external/:externalId', authMiddleware(['READ_REQUIREMENT']), getRequirementByExternalId);
 
 // ✅ Agregar una o más Builds a un requerimiento
-router.post('/addBuild', authMiddleware(['UPDATE_REQUIREMENT']), addBuildToRequirement);
+router.post('/addBuild', authMiddleware(['UPDATE_REQUIREMENT']), addBuildsToRequirement);
+
+// ✅ Agregar una o más Builds a un requerimiento
+router.post('/remove-builds', authMiddleware(['UPDATE_REQUIREMENT']), removeBuildsFromRequirement);
+
+
+
 
 
 module.exports = router;
