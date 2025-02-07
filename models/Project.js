@@ -43,14 +43,14 @@ const ProjectSchema = new mongoose.Schema({
     business_model: {
         type: String,
         enum: [
-            'B2B', // Business to Business
-            'B2C', // Business to Consumer
-            'B2G', // Business to Government
-            'C2C', // Consumer to Consumer
-            'Freemium',
-            'Suscripción',
-            'Pago Único'
-        ],
+    'B2B - Negocios a Negocios',            // Business to Business: Empresas que venden a otras empresas
+    'B2C - Negocios a Consumidores',        // Business to Consumer: Empresas que venden directamente a clientes
+    'B2G - Negocios a Gobierno',            // Business to Government: Empresas que proveen servicios o productos a entidades gubernamentales
+    'C2C - Consumidor a Consumidor',        // Consumer to Consumer: Plataformas donde los consumidores compran y venden entre sí (Ej: eBay, MercadoLibre)
+    'Freemium - Gratis con mejoras pagas',  // Modelo gratuito con opciones de pago para características avanzadas
+    'Suscripción - Pago recurrente',        // Modelo basado en pagos periódicos (mensuales, anuales) para acceder al servicio
+    'Pago Único - Compra sin suscripción'   // Pago único por acceso al producto/servicio sin necesidad de suscripción
+],
         required: true
     },
     security_level: {

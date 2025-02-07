@@ -21,9 +21,6 @@ const TestCaseSchema = new mongoose.Schema({
     tester_occupation: { type: Number, default: 1 },
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     keywords: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Keyword' }],
-    // Se han eliminado las relaciones con StepGroup y Step por el momento.
-    // Para una futura implementación, podrías considerar agregar:
-    // step_groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StepGroup' }]
 }, { timestamps: true });
 
 // ✅ Generador Correlativo de `testcase_id`

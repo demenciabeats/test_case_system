@@ -142,7 +142,6 @@ exports.createProject = async (req, res) => {
         res.status(500).json({ message: "Error creando proyecto", error });
     }
 };
-
 // ✅ **Actualizar un Proyecto con validaciones**
 exports.updateProject = async (req, res) => {
     try {
@@ -293,5 +292,92 @@ exports.getProjectById = async (req, res) => {
     } catch (error) {
         console.error("❌ Error obteniendo Proyecto:", error);
         res.status(500).json({ message: 'Error obteniendo proyecto', error });
+    }
+};
+// ✅ Valores permitidos para los enums con descripciones
+const validEnums = {
+    project_category: [
+        'Aplicación Web - Corporativa',
+        'Aplicación Web - SaaS',
+        'Aplicación Web - E-commerce',
+        'Aplicación Móvil - Android',
+        'Aplicación Móvil - iOS',
+        'Aplicación Móvil - Híbrida',
+        'Backend API - REST',
+        'Backend API - GraphQL',
+        'Backend API - WebSockets',
+        'Infraestructura - DevOps',
+        'Infraestructura - CI/CD',
+        'Infraestructura - Kubernetes',
+        'Automatización - Pruebas Funcionales',
+        'Automatización - Pruebas de Carga',
+        'Automatización - RPA',
+        'Seguridad - Pentesting',
+        'Seguridad - Cifrado y Protección de Datos'
+    ],
+    business_model: [
+        'B2B - Negocios a Negocios',
+        'B2C - Negocios a Consumidores',
+        'B2G - Negocios a Gobierno',
+        'C2C - Consumidor a Consumidor',
+        'Freemium - Gratis con mejoras pagas',
+        'Suscripción - Pago recurrente',
+        'Pago Único - Compra sin suscripción'
+    ],
+    security_level: [
+        'Básico - Sin datos sensibles',
+        'Intermedio - Autenticación estándar',
+        'Alto - Cumple con normativas (ISO, GDPR)',
+        'Crítico - Protección avanzada y cifrado extremo'
+    ],
+    execution_platform: [
+        'Web',
+        'Móvil - Android',
+        'Móvil - iOS',
+        'Móvil - Multiplataforma',
+        'Desktop - Windows',
+        'Desktop - MacOS',
+        'Desktop - Linux',
+        'IoT',
+        'Cloud - AWS',
+        'Cloud - Azure',
+        'Cloud - GCP',
+        'Híbrido'
+    ],
+    maintenance_status: [
+        'Activo - Desarrollo en curso',
+        'Activo - Solo mantenimiento',
+        'En pausa',
+        'Deprecado'
+    ],
+    priority: [
+        'Baja - Proyecto experimental',
+        'Baja - Poca urgencia',
+        'Media - Relevante para la empresa',
+        'Media - Necesario en roadmap',
+        'Alta - Proyecto estratégico',
+        'Alta - Alto impacto en negocio',
+        'Crítica - Impacto financiero severo',
+        'Crítica - Cliente clave'
+    ],
+    complexity: [
+        'Baja - Desarrollo sencillo',
+        'Baja - Pequeño alcance',
+        'Media - Integración con otros sistemas',
+        'Media - Alguna complejidad técnica',
+        'Alta - Múltiples dependencias',
+        'Alta - Tecnología avanzada',
+        'Crítica - Requiere alta especialización',
+        'Crítica - Normativas estrictas'
+    ]
+};
+
+// ✅ Método para obtener los enums permitidos
+exports.getProjectEnums = async (req, res) => {
+    try {
+        res.json(validEnums);
+    } catch (error) {
+        console.error("❌ Error obteniendo enums de proyectos:", error);
+        res.status(500).json({ message: "Error obteniendo enums de proyectos", error });
     }
 };

@@ -18,14 +18,13 @@ const validateEnum = (value, validValues, fieldName) => {
     return null;
 };
 
-// ✅ Crear un TestCase con validación de nombre único dentro de una Test Suite
+// ✅ Crear un TestCase con validación de jerarquía de Test Suites
 exports.createTestCase = async (req, res) => {
     try {
-        // Se ha eliminado la variable 'step_groups' del destructuring
         const { title, description, priority, status, test_type, automation_status, suite_id, project_id, expected_result, duration_in_minutes, tester_occupation, keywords } = req.body;
         let errors = [];
 
-        // 🔍 Validaciones ENUM
+        // 🔍 **Validaciones ENUM**
         errors.push(validateEnum(priority, validPriorities, 'priority'));
         errors.push(validateEnum(status, validStatuses, 'status'));
         errors.push(validateEnum(test_type, validTestTypes, 'test_type'));
@@ -36,34 +35,43 @@ exports.createTestCase = async (req, res) => {
             return res.status(400).json({ message: 'Errores en la validación de datos', errors });
         }
 
-        // 🔍 Validación de Proyecto
+        // 🔍 **Validación de Proyecto**
         const project = await Project.findOne({ project_id });
         if (!project) {
-            return res.status(400).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
+            return res.status(400).json({ message: `❌ No se encontró el Proyecto con ID '${project_id}'.` });
         }
 
-        // 🔍 Validación de TestSuite
-        const suite = await TestSuite.findOne({ suite_id });
+        // 🔍 **Validación de TestSuite**
+        const suite = await TestSuite.findOne({ suite_id }).populate('project_id', 'project_id');
         if (!suite) {
-            return res.status(400).json({ message: `No se encontró la Test Suite con ID ${suite_id}` });
+            return res.status(400).json({ message: `❌ No se encontró la Test Suite con ID '${suite_id}'.` });
         }
 
-        // 🔍 Validar que no exista un TestCase con el mismo nombre en la misma TestSuite
+        // 🚨 **Verificar que la TestSuite pertenezca al mismo Proyecto**
+        if (suite.project_id.project_id !== project.project_id) {
+            return res.status(400).json({ 
+                message: `❌ No se puede asignar el TestCase a la Test Suite '${suite_id}' porque pertenece a un proyecto diferente ('${suite.project_id.project_id}'). Asegúrate de seleccionar una Test Suite dentro del mismo proyecto '${project.project_id}'.`
+            });
+        }
+
+        // 🚨 **Validar que la TestSuite sea de último nivel**
+        const hasChildren = await TestSuite.findOne({ owner_suite_id: suite_id });
+
+        if (hasChildren) {
+            return res.status(400).json({ 
+                message: `⚠️ No se pueden asociar casos de prueba a la Test Suite '${suite_id}' porque tiene sub Test Suites. Solo se pueden asignar Test Cases a Test Suites de último nivel.` 
+            });
+        }
+
+        // 🚨 **Validar que no haya otro TestCase con el mismo nombre en la misma TestSuite**
         const existingTestCase = await TestCase.findOne({ title: title.trim(), suite_id });
         if (existingTestCase) {
-            return res.status(400).json({ message: `Ya existe un TestCase con el nombre '${title}' en la Test Suite '${suite_id}'` });
+            return res.status(400).json({
+                message: `⚠️ Ya existe un TestCase con el nombre '${title}' en la Test Suite '${suite_id}'. No se permiten Test Cases duplicados en la misma Test Suite.`
+            });
         }
 
-        // 🔍 Validación de Keywords
-        let keywordObjects = [];
-        if (keywords && keywords.length > 0) {
-            keywordObjects = await Keyword.find({ _id: { $in: keywords } });
-            if (keywordObjects.length !== keywords.length) {
-                return res.status(400).json({ message: "Algunas keywords no existen en la base de datos." });
-            }
-        }
-
-        // ✅ Crear el TestCase
+        // ✅ **Crear el TestCase**
         const newTestCase = new TestCase({
             title: title.trim(),
             description,
@@ -77,35 +85,24 @@ exports.createTestCase = async (req, res) => {
             duration_in_minutes,
             tester_occupation,
             created_by: req.user.id,
-            keywords: keywordObjects.map(k => k._id)
-            // Nota: Se ha eliminado el campo 'step_groups' por el momento.
+            keywords
         });
 
         await newTestCase.save();
 
         res.status(201).json({
-            message: "TestCase creado exitosamente.",
+            message: "✅ TestCase creado exitosamente.",
             testCase: {
                 testcase_id: newTestCase.testcase_id,
                 title: newTestCase.title,
-                description: newTestCase.description,
-                priority: newTestCase.priority,
-                status: newTestCase.status,
-                test_type: newTestCase.test_type,
-                automation_status: newTestCase.automation_status,
-                suite_id: newTestCase.suite_id,
                 project_id: newTestCase.project_id,
-                expected_result: newTestCase.expected_result,
-                duration_in_minutes: newTestCase.duration_in_minutes,
-                tester_occupation: newTestCase.tester_occupation,
-                created_by: newTestCase.created_by,
-                keywords: keywordObjects.map(k => ({ _id: k._id, name: k.keyword_name })),
-                createdAt: newTestCase.createdAt
+                suite_id: newTestCase.suite_id
             }
         });
+
     } catch (error) {
         console.error("❌ Error creando TestCase:", error);
-        res.status(500).json({ message: 'Error creando TestCase', error });
+        res.status(500).json({ message: '❌ Error creando TestCase.', error });
     }
 };
 
@@ -137,11 +134,10 @@ exports.getTestCases = async (req, res) => {
 
         res.json(formattedTestCases);
     } catch (error) {
-        console.error("❌ Error obteniendo TestCases:", error);
+        console.error("Error obteniendo TestCases:", error);
         res.status(500).json({ message: 'Error obteniendo TestCases', error });
     }
 };
-
 // ✅ Obtener un TestCase por ID
 exports.getTestCaseById = async (req, res) => {
     try {
@@ -173,11 +169,10 @@ exports.getTestCaseById = async (req, res) => {
 
         res.json(formattedTestCase);
     } catch (error) {
-        console.error("❌ Error obteniendo TestCase:", error);
+        console.error("Error obteniendo TestCase:", error);
         res.status(500).json({ message: 'Error obteniendo TestCase', error });
     }
 };
-
 // Obtener TestCases por TestSuite (usando correlativo)
 exports.getTestCasesBySuite = async (req, res) => {
     try {
@@ -197,11 +192,10 @@ exports.getTestCasesBySuite = async (req, res) => {
 
         res.json(testCases);
     } catch (error) {
-        console.error("❌ Error obteniendo TestCases por TestSuite:", error);
+        console.error("Error obteniendo TestCases por TestSuite:", error);
         res.status(500).json({ message: 'Error obteniendo TestCases por TestSuite', error });
     }
 };
-
 // ✅ Obtener TestCases por Proyecto
 exports.getTestCasesByProject = async (req, res) => {
     try {
@@ -239,34 +233,57 @@ exports.getTestCasesByProject = async (req, res) => {
 
         res.json(formattedTestCases);
     } catch (error) {
-        console.error("❌ Error obteniendo TestCases por Proyecto:", error);
+        console.error("Error obteniendo TestCases por Proyecto:", error);
         res.status(500).json({ message: 'Error obteniendo TestCases por Proyecto', error });
     }
 };
-
-// ✅ Actualizar un TestCase con validación de nombre único dentro de una Test Suite
+// ✅ Actualizar un TestCase con validación de jerarquía de Test Suites y pertenencia al mismo Proyecto
 exports.updateTestCase = async (req, res) => {
     try {
-        // Se ha eliminado 'step_groups' del destructuring
         const { title, suite_id, keywords, ...updateData } = req.body;
         let keywordObjects = [];
 
-        // 🔍 Verificar si el TestCase existe
+        // 🔍 **Verificar si el TestCase existe**
         const existingTestCase = await TestCase.findOne({ testcase_id: req.params.id });
         if (!existingTestCase) {
-            return res.status(404).json({ message: `TestCase con ID '${req.params.id}' no encontrado` });
+            return res.status(404).json({ message: `❌ TestCase con ID '${req.params.id}' no encontrado.` });
         }
 
-        // 🔍 Validación de TestSuite (si se actualiza)
+        // 🔍 **Si se actualiza la TestSuite, validar jerarquía y pertenencia al mismo Proyecto**
         if (suite_id && suite_id !== existingTestCase.suite_id) {
-            const suiteExists = await TestSuite.findOne({ suite_id });
-            if (!suiteExists) {
-                return res.status(400).json({ message: `No se encontró la Test Suite con ID '${suite_id}'` });
+            const newSuite = await TestSuite.findOne({ suite_id }).populate('project_id', 'project_id');
+            if (!newSuite) {
+                return res.status(400).json({ message: `❌ No se encontró la Test Suite con ID '${suite_id}'.` });
             }
+
+            // 🚨 **Validar que la TestSuite sea de último nivel**
+            const hasChildren = await TestSuite.findOne({ owner_suite_id: suite_id });
+
+            if (hasChildren) {
+                return res.status(400).json({ 
+                    message: `⚠️ No se pueden asociar casos de prueba a la Test Suite '${suite_id}' porque tiene sub Test Suites. 
+                    Solo se pueden asignar a Test Suites de último nivel.` 
+                });
+            }
+
+            // 🚨 **Validar que la TestSuite pertenezca al mismo Proyecto**
+            const project = await Project.findOne({ project_id: existingTestCase.project_id });
+
+            if (!project) {
+                return res.status(400).json({ message: `❌ No se encontró el Proyecto con ID '${existingTestCase.project_id}'.` });
+            }
+
+            if (newSuite.project_id.project_id !== project.project_id) {
+                return res.status(400).json({ 
+                    message: `❌ No se puede reasignar el TestCase a la Test Suite '${suite_id}' porque pertenece a un proyecto diferente ('${newSuite.project_id.project_id}'). 
+                    Asegúrate de seleccionar una Test Suite dentro del mismo proyecto '${project.project_id}'.`
+                });
+            }
+
             updateData.suite_id = suite_id;
         }
 
-        // 🔍 Verificar si otro TestCase en la misma Test Suite ya tiene este nombre
+        // 🚨 **Validar que no haya otro TestCase con el mismo nombre en la misma TestSuite**
         if (title && title.trim() !== existingTestCase.title) {
             const duplicateTestCase = await TestCase.findOne({
                 title: title.trim(),
@@ -276,22 +293,23 @@ exports.updateTestCase = async (req, res) => {
 
             if (duplicateTestCase) {
                 return res.status(400).json({
-                    message: `Ya existe un TestCase con el nombre '${title}' en la Test Suite '${suite_id || existingTestCase.suite_id}'`
+                    message: `⚠️ Ya existe un TestCase con el nombre '${title}' en la Test Suite '${suite_id || existingTestCase.suite_id}'. 
+                    No se permiten Test Cases duplicados en la misma Test Suite.`
                 });
             }
             updateData.title = title.trim();
         }
 
-        // 🔍 Validación de Keywords (si se actualizan)
+        // 🔍 **Validación de Keywords (si se actualizan)**
         if (keywords && keywords.length > 0) {
             keywordObjects = await Keyword.find({ _id: { $in: keywords } });
             if (keywordObjects.length !== keywords.length) {
-                return res.status(400).json({ message: "Algunas keywords no existen en la base de datos." });
+                return res.status(400).json({ message: "⚠️ Algunas keywords no existen en la base de datos." });
             }
             updateData.keywords = keywordObjects.map(k => k._id);
         }
 
-        // ✅ Actualizar el TestCase
+        // ✅ **Actualizar el TestCase**
         const updatedTestCase = await TestCase.findOneAndUpdate(
             { testcase_id: req.params.id },
             updateData,
@@ -299,34 +317,25 @@ exports.updateTestCase = async (req, res) => {
         ).populate('keywords', 'keyword_name');
 
         if (!updatedTestCase) {
-            return res.status(404).json({ message: 'TestCase no encontrado' });
+            return res.status(404).json({ message: '❌ TestCase no encontrado.' });
         }
 
         res.json({
-            message: "TestCase actualizado exitosamente.",
+            message: "✅ TestCase actualizado exitosamente.",
             testCase: {
                 testcase_id: updatedTestCase.testcase_id,
                 title: updatedTestCase.title,
-                description: updatedTestCase.description,
-                priority: updatedTestCase.priority,
-                status: updatedTestCase.status,
-                test_type: updatedTestCase.test_type,
-                automation_status: updatedTestCase.automation_status,
-                suite_id: updatedTestCase.suite_id,
                 project_id: updatedTestCase.project_id,
-                expected_result: updatedTestCase.expected_result,
-                duration_in_minutes: updatedTestCase.duration_in_minutes,
-                tester_occupation: updatedTestCase.tester_occupation,
-                created_by: updatedTestCase.created_by,
-                keywords: keywordObjects.map(k => ({ _id: k._id, name: k.keyword_name })),
-                updatedAt: updatedTestCase.updatedAt
+                suite_id: updatedTestCase.suite_id
             }
         });
+
     } catch (error) {
         console.error("❌ Error actualizando TestCase:", error);
-        res.status(500).json({ message: 'Error actualizando TestCase', error });
+        res.status(500).json({ message: '❌ Error actualizando TestCase.', error });
     }
 };
+
 
 // Eliminar un TestCase
 exports.deleteTestCase = async (req, res) => {

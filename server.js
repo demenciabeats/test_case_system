@@ -26,16 +26,16 @@ app.use((req, res, next) => {
     next();
 });
 */
+app.use('/api/projects', projectRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/roles', roleRoutes);
 app.use('/api/permissions', permissionRoutes);
-app.use('/api/user_roles', userRoleRoutes);
+app.use('/api/user-roles', userRoleRoutes);
 app.use('/api/role_permissions', rolePermissionRoutes);
 app.use('/api/keywords', keywordRoutes);
 app.use('/api/builds', buildRoutes);
 app.use('/api/requirements', requirementRoutes);
 app.use('/api/celulas', celulaRoutes);
-app.use('/api/projects', projectRoutes);
 app.use('/api/test_suites', testSuiteRoutes);
 app.use('/api/testcases', testCaseRoutes);
 //app.use('/api/step_groups', stepGroupRoutes);

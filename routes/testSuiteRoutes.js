@@ -4,7 +4,8 @@ const {
     updateTestSuite,
     deleteTestSuite,
     getTestSuites,
-    getTestSuiteById
+    getTestSuiteById,
+    getTestSuiteHierarchy
 } = require('../controllers/testSuiteController');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
@@ -24,5 +25,8 @@ router.get('/', authMiddleware(['READ_TEST_SUITE']), getTestSuites);
 
 // 🔹 Obtener una Test Suite por ID (requiere permiso 'READ_TEST_SUITE')
 router.get('/:id', authMiddleware(['READ_TEST_SUITE']), getTestSuiteById);
+
+router.get('/hierarchy/:suite_id', authMiddleware(['READ_TEST_SUITE']), getTestSuiteHierarchy);
+
 
 module.exports = router;

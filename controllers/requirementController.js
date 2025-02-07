@@ -22,7 +22,8 @@ const validateEnum = (value, validValues, fieldName) => {
     }
     return null;
 };
-// ✅ Crear un Requerimiento con Validaciones de todas las relaciones externas
+
+// ✅ Crear un Requerimiento con Validaciones de Duplicidad por Proyecto
 exports.createRequirement = async (req, res) => {
     try {
         const { requirement_name, external_id, project_id, tech_lead, celula, testers, builds, keywords } = req.body;
@@ -38,79 +39,21 @@ exports.createRequirement = async (req, res) => {
             }
         }
 
-        // ✅ **Validar `tech_lead` si se envía**
-        if (tech_lead) {
-            const existingTechLead = await User.findById(tech_lead);
-            if (!existingTechLead) {
-                errors.push(`No se encontró un Tech Lead con ID '${tech_lead}'.`);
+        // ✅ **Validar que el `requirement_name` sea único dentro del mismo `project_id`**
+        const existingRequirement = await Requirement.findOne({ requirement_name, project_id });
+        if (existingRequirement) {
+            errors.push(`El nombre '${requirement_name}' ya está en uso dentro del proyecto '${project_id}'.`);
+        }
+
+        // ✅ **Validar que el `external_id` sea único dentro del mismo `project_id`**
+        if (external_id) {
+            const existingExternal = await Requirement.findOne({ external_id, project_id });
+            if (existingExternal) {
+                errors.push(`El ID externo '${external_id}' ya está en uso dentro del proyecto '${project_id}'.`);
             }
         }
 
-        // ✅ **Validar `celula` si se envía**
-        if (celula) {
-            const existingCelula = await Celula.findById(celula);
-            if (!existingCelula) {
-                errors.push(`No se encontró una Célula con ID '${celula}'.`);
-            }
-        }
-
-        // ✅ **Validar `testers` si se envían**
-        let testerObjects = [];
-        if (testers && testers.length > 0) {
-            testerObjects = await User.find({ _id: { $in: testers } });
-            if (testerObjects.length !== testers.length) {
-                errors.push("Algunos testers no existen en la base de datos.");
-            }
-        }
-
-        // ✅ **Validar `builds` si se envían**
-        let buildObjects = [];
-        if (builds && builds.length > 0) {
-            buildObjects = await Build.find({ build_id: { $in: builds } });
-            
-            // Verificar si hay Builds inexistentes
-            if (buildObjects.length !== builds.length) {
-                errors.push("Algunas Builds no existen en la base de datos.");
-            }
-
-            // Verificar si las Builds tienen un estado inválido
-            const invalidBuilds = buildObjects.filter(build => invalidBuildStatuses.includes(build.status));
-            if (invalidBuilds.length > 0) {
-                errors.push({
-                    message: "Algunas Builds tienen estados inválidos para ser asociadas.",
-                    builds: invalidBuilds.map(b => ({
-                        build_id: b.build_id,
-                        build_name: b.build_name,
-                        status: b.status
-                    }))
-                });
-            }
-
-            // Verificar si alguna Build ya está asociada a otro Requerimiento
-            const existingRequirements = await Requirement.find({ builds: { $in: buildObjects.map(b => b._id) } })
-                .populate('builds', 'build_id build_name');
-            if (existingRequirements.length > 0) {
-                errors.push({
-                    message: "Algunas Builds ya están asociadas a otro Requerimiento.",
-                    builds: existingRequirements.flatMap(req => req.builds.map(b => ({
-                        build_id: b.build_id,
-                        build_name: b.build_name,
-                        requirement_id: req.requirement_id
-                    })))
-                });
-            }
-        }
-
-        // ✅ **Validar `keywords` si se envían**
-        let keywordObjects = [];
-        if (keywords && keywords.length > 0) {
-            keywordObjects = await Keyword.find({ _id: { $in: keywords } });
-            if (keywordObjects.length !== keywords.length) {
-                errors.push("Algunas Keywords no existen en la base de datos.");
-            }
-        }
-
-        // 🚨 **Si hay errores, retornar antes de crear el requerimiento**
+        // ✅ **Si hay errores, retornar antes de continuar**
         if (errors.length > 0) {
             return res.status(400).json({ message: 'Errores en la validación de datos', errors });
         }
@@ -119,15 +62,12 @@ exports.createRequirement = async (req, res) => {
         const requirement = new Requirement({
             ...req.body,
             requirement_name: requirement_name.trim(),
-            builds: buildObjects.map(b => b._id),
-            keywords: keywordObjects.map(k => k._id),
-            testers: testerObjects.map(t => t._id),
             created_by: req.user.id
         });
 
         await requirement.save();
 
-        // ✅ **Obtener el requerimiento con sus relaciones para la respuesta**
+        // ✅ **Obtener el requerimiento con sus relaciones**
         const fullRequirement = await Requirement.findOne({ requirement_id: requirement.requirement_id })
             .populate('created_by tech_lead celula testers builds')
             .populate('keywords', 'keyword_name');
@@ -136,6 +76,7 @@ exports.createRequirement = async (req, res) => {
             message: "Requerimiento creado exitosamente.",
             requirement: {
                 requirement_id: fullRequirement.requirement_id,
+                _id: fullRequirement._id,
                 requirement_name: fullRequirement.requirement_name,
                 description: fullRequirement.description,
                 project_id: fullRequirement.project_id,
@@ -163,6 +104,7 @@ exports.createRequirement = async (req, res) => {
                 createdAt: fullRequirement.createdAt
             }
         });
+
     } catch (error) {
         console.error("❌ Error creando requerimiento:", error);
 
@@ -181,85 +123,76 @@ exports.createRequirement = async (req, res) => {
         res.status(500).json({ message: 'Error creando requerimiento', error });
     }
 };
-
-// ✅ **Actualizar un Requerimiento incluyendo Keywords y validando nombre**
+// ✅ **Actualizar un Requerimiento con validaciones**
 exports.updateRequirement = async (req, res) => {
     try {
-        const { requirement_name, keywords, builds, ...updateData } = req.body;
-        let errors = [];
+        const { requirement_name, external_id, project_id, ...updateData } = req.body;
+        const { id } = req.params;
 
-        // 🔍 **Verificar si el requerimiento existe**
-        const existingRequirement = await Requirement.findOne({ requirement_id: req.params.id });
+        // ✅ **Verificar si el requerimiento existe**
+        const existingRequirement = await Requirement.findOne({ requirement_id: id });
         if (!existingRequirement) {
-            return res.status(404).json({ message: 'Requerimiento no encontrado' });
+            return res.status(404).json({ message: `Requerimiento con ID '${id}' no encontrado.` });
         }
 
-        // 🔍 **Verificar si otro requerimiento ya tiene este nombre**
-        if (requirement_name) {
-            const existingName = await Requirement.findOne({
+        // ✅ **Validar que el `requirement_name` no esté duplicado en el mismo `project_id`**
+        if (requirement_name && requirement_name.trim() !== existingRequirement.requirement_name) {
+            const duplicateRequirement = await Requirement.findOne({
                 requirement_name: requirement_name.trim(),
-                requirement_id: { $ne: req.params.id }
+                project_id: existingRequirement.project_id,
+                requirement_id: { $ne: id }
             });
-            if (existingName) {
-                return res.status(400).json({ message: `El nombre del requerimiento '${requirement_name}' ya está en uso.` });
+            if (duplicateRequirement) {
+                return res.status(400).json({ message: `Ya existe un Requerimiento con el nombre '${requirement_name}' en este proyecto.` });
             }
             updateData.requirement_name = requirement_name.trim();
         }
 
-        // 🔍 **Validación de Builds**
-        let buildIds = [];
-        if (builds && builds.length > 0) {
-            buildIds = await Build.find({ build_id: { $in: builds } }).select('_id');
-            if (buildIds.length !== builds.length) {
-                errors.push("Algunas builds no existen en la base de datos.");
+        // ✅ **Validar que `external_id` sea único dentro del mismo `project_id`**
+        if (external_id && external_id !== existingRequirement.external_id) {
+            const duplicateExternalId = await Requirement.findOne({
+                external_id,
+                project_id: existingRequirement.project_id,
+                requirement_id: { $ne: id }
+            });
+            if (duplicateExternalId) {
+                return res.status(400).json({ message: `El External ID '${external_id}' ya está asociado a otro requerimiento en este proyecto.` });
             }
-            updateData.builds = buildIds.map(b => b._id);
+            updateData.external_id = external_id;
         }
 
-        // 🔍 **Validación de Keywords**
-        let keywordObjects = [];
-        if (keywords && keywords.length > 0) {
-            keywordObjects = await Keyword.find({ _id: { $in: keywords } });
-            if (keywordObjects.length !== keywords.length) {
-                errors.push("Algunas keywords no existen en la base de datos.");
-            }
-            updateData.keywords = keywordObjects.map(k => k._id);
-        }
-
-        if (errors.length > 0) {
-            return res.status(400).json({ message: 'Errores en la validación de datos', errors });
-        }
-
+        // ✅ **Actualizar el requerimiento**
         const updatedRequirement = await Requirement.findOneAndUpdate(
-            { requirement_id: req.params.id },
+            { requirement_id: id },
             updateData,
             { new: true }
-        ).populate('keywords', 'keyword_name');
+        );
 
-        if (!updatedRequirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
-
+        if (!updatedRequirement) {
+            return res.status(404).json({ message: 'Requerimiento no encontrado' });
+        }
         res.json(updatedRequirement);
     } catch (error) {
         console.error("❌ Error actualizando requerimiento:", error);
         res.status(500).json({ message: 'Error actualizando requerimiento', error });
     }
 };
-
-// ✅ Obtener todos los Requerimientos con salida optimizada
+// ✅ Obtener todos los Requerimientos con salida optimizada y consistente
 exports.getRequirements = async (req, res) => {
     try {
         const requirements = await Requirement.find()
-            .populate('created_by', 'username _id') // ✅ Solo ID y username
-            .populate('tech_lead', 'username _id') // ✅ Solo ID y username
-            .populate('celula', 'celula_name _id') // ✅ Solo ID y nombre de la célula
-            .populate('testers', 'username _id') // ✅ Solo ID y username
-            .populate('keywords', '_id keyword_name') // ✅ Solo ID y nombre de las keywords
-            .populate('builds', 'build_id build_name version status created_by') // ✅ Más información de la build
-            .select('-__v -updatedAt') // ✅ Excluir campos innecesarios
-            .sort({ createdAt: -1 }); // ✅ Ordenar por el más reciente
+            .populate('created_by', 'username _id')
+            .populate('tech_lead', 'username _id')
+            .populate('celula', 'celula_name _id')
+            .populate('testers', 'username _id')
+            .populate('keywords', '_id keyword_name')
+            .populate('builds', 'build_id build_name version status')
+            .select('-__v -updatedAt')
+            .sort({ createdAt: -1 });
 
         res.json(requirements.map(req => ({
             requirement_id: req.requirement_id,
+            _id: req._id,
             requirement_name: req.requirement_name,
             description: req.description,
             project_id: req.project_id,
@@ -276,7 +209,6 @@ exports.getRequirements = async (req, res) => {
                 build_name: b.build_name,
                 version: b.version,
                 status: b.status,
-                created_by: b.created_by ? { _id: b.created_by._id, username: b.created_by.username } : null
             })),
             keywords: req.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
             external_id: req.external_id,
@@ -292,7 +224,7 @@ exports.getRequirements = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo requerimientos', error });
     }
 };
-// ✅ Obtener un Requerimiento por su ID con salida optimizada
+// ✅ Obtener un Requerimiento por ID con salida optimizada y consistente
 exports.getRequirementById = async (req, res) => {
     try {
         const requirement = await Requirement.findOne({ requirement_id: req.params.id })
@@ -301,13 +233,16 @@ exports.getRequirementById = async (req, res) => {
             .populate('celula', 'celula_name _id')
             .populate('testers', 'username _id')
             .populate('keywords', '_id keyword_name')
-            .populate('builds', 'build_id build_name version status created_by')
+            .populate('builds', 'build_id build_name version status')
             .select('-__v -updatedAt');
 
-        if (!requirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
+        if (!requirement) {
+            return res.status(404).json({ message: 'Requerimiento no encontrado' });
+        }
 
         res.json({
             requirement_id: requirement.requirement_id,
+            _id: requirement._id,
             requirement_name: requirement.requirement_name,
             description: requirement.description,
             project_id: requirement.project_id,
@@ -319,13 +254,6 @@ exports.getRequirementById = async (req, res) => {
             tech_lead: requirement.tech_lead ? { _id: requirement.tech_lead._id, username: requirement.tech_lead.username } : null,
             testers: requirement.testers.map(t => ({ _id: t._id, username: t.username })),
             celula: requirement.celula ? { _id: requirement.celula._id, name: requirement.celula.celula_name } : null,
-            builds: requirement.builds.map(b => ({
-                build_id: b.build_id,
-                build_name: b.build_name,
-                version: b.version,
-                status: b.status,
-                created_by: b.created_by ? { _id: b.created_by._id, username: b.created_by.username } : null
-            })),
             keywords: requirement.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
             external_id: requirement.external_id,
             external_link: requirement.external_link,

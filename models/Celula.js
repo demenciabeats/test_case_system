@@ -1,4 +1,3 @@
-/// models/Celula.js
 const mongoose = require('mongoose');
 const CelulaSchema = new mongoose.Schema({
     celula_name: { type: String, required: true },

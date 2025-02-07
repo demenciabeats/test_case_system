@@ -39,8 +39,4 @@ router.post('/addBuild', authMiddleware(['UPDATE_REQUIREMENT']), addBuildsToRequ
 // ✅ Agregar una o más Builds a un requerimiento
 router.post('/remove-builds', authMiddleware(['UPDATE_REQUIREMENT']), removeBuildsFromRequirement);
 
-
-
-
-
 module.exports = router;

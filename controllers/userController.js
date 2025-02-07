@@ -20,14 +20,48 @@ exports.loginUser = async (req, res) => {
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
-        if (!user) return res.status(400).json({ message: 'Usuario no encontrado' });
+        if (!user) {
+            return res.status(400).json({ message: 'Usuario no encontrado' });
+        }
+        
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(400).json({ message: 'Contraseña incorrecta' });
-        const roles = await UserRole.find({ user_id: user._id }).populate('role_id');
-        const rolePermissions = await RolePermission.find({ role_id: { $in: roles.map(r => r.role_id) } }).populate('permission_id');
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Contraseña incorrecta' });
+        }
+
+        // Obtener roles y permisos asociados al usuario
+        const userRoles = await UserRole.find({ user_id: user._id }).populate('role_id');
+        const rolesList = userRoles.map(r => ({
+            id: r.role_id._id,
+            name: r.role_id.role_name
+        }));
+
+        const rolePermissions = await RolePermission.find({
+            role_id: { $in: userRoles.map(r => r.role_id._id) }
+        }).populate('permission_id');
         const permissions = rolePermissions.map(rp => rp.permission_id.permission_name);
-        const token = jwt.sign({ id: user._id, roles: roles.map(r => r.role_id.role_name), permissions }, process.env.JWT_SECRET, { expiresIn: '1h' });
-        res.json({ token, user, roles: roles.map(r => r.role_id.role_name), permissions });
+
+        // Generar el token JWT con la información necesaria (solo datos no sensibles)
+        // Recuerda: aunque el JWT se firma y codifica en Base64URL, el payload puede ser decodificado
+        const token = jwt.sign(
+            { 
+                id: user._id, 
+                roles: rolesList.map(r => r.name), 
+                permissions 
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '1h' }
+        );
+
+        // Retornar el token y una información mínima del usuario (incluyendo roles)
+        res.json({ 
+            token, 
+            user: { 
+                id: user._id, 
+                username: user.username, 
+                roles: rolesList 
+            } 
+        });
     } catch (error) {
         res.status(500).json({ message: 'Error en login', error });
     }
