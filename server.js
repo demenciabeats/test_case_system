@@ -38,8 +38,6 @@ app.use('/api/requirements', requirementRoutes);
 app.use('/api/celulas', celulaRoutes);
 app.use('/api/test_suites', testSuiteRoutes);
 app.use('/api/testcases', testCaseRoutes);
-//app.use('/api/step_groups', stepGroupRoutes);
-//app.use('/api/steps', stepRoutes);
 
 
 app.listen(process.env.PORT, () => {
