@@ -15,7 +15,7 @@ const projectRoutes = require('./routes/projectRoutes');
 const testSuiteRoutes = require('./routes/testSuiteRoutes');
 const testCaseRoutes = require('./routes/testCaseRoutes');
 //const stepGroupRoutes = require('./routes/stepGroupRoutes');
-//const stepRoutes = require('./routes/stepRoutes');
+const stepRoutes = require('./routes/stepRoutes');
 const app = express();
 
 connectDB();
@@ -38,6 +38,7 @@ app.use('/api/requirements', requirementRoutes);
 app.use('/api/celulas', celulaRoutes);
 app.use('/api/test_suites', testSuiteRoutes);
 app.use('/api/testcases', testCaseRoutes);
+app.use('/api/steps', stepRoutes);
 
 
 app.listen(process.env.PORT, () => {

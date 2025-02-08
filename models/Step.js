@@ -1,47 +1,84 @@
 const mongoose = require('mongoose');
 
-const StepSchema = new mongoose.Schema({
-    step_id: { type: String, unique: true, immutable: true },
-    step_number: { type: Number, required: true },
-    action: { type: String, required: true },
-    expected_result: { type: String, required: true },
-    step_group: { type: mongoose.Schema.Types.ObjectId, ref: 'StepGroup', required: true }
-}, { timestamps: true });
-
-StepSchema.pre('save', async function (next) {
-    try {
-        if (!this.isNew) return next(); // Si no es nuevo, no recalcular
-
-        // Buscar el StepGroup asociado
-        const stepGroup = await mongoose.model('StepGroup').findOne({ _id: this.step_group });
-        if (!stepGroup) {
-            return next(new Error('Step Group no encontrado'));
-        }
-
-        // Obtener los Steps existentes en el grupo ordenados por número
-        const steps = await mongoose.model('Step')
-            .find({ step_group: this.step_group })
-            .sort({ step_number: 1 });
-
-        // Obtener los números de paso usados
-        let usedNumbers = steps.map(step => step.step_number);
-
-        // Encontrar el primer número disponible en la secuencia
-        let stepNumber = 1;
-        while (usedNumbers.includes(stepNumber)) {
-            stepNumber++;
-        }
-
-        // Asignar `step_number` y `step_id`
-        this.step_number = stepNumber;
-        this.step_id = `${stepGroup.step_group_id}-STEP-${String(stepNumber).padStart(2, '0')}`;
-
-        next();
-    } catch (error) {
-        next(error);
+const stepSchema = new mongoose.Schema({
+  step_id: {
+    type: String,
+    unique: true
+  },
+  title: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  expected_result: {
+    type: String,
+    required: true
+  },
+  type: {
+    type: String,
+    enum: ['Setup', 'Execution', 'Teardown'],
+    required: true
+  },
+  is_critical: {
+    type: Boolean,
+    default: false
+  },
+  is_stop_point: {
+    type: Boolean,
+    default: false
+  },
+  stop_reason: {
+    type: String,
+    enum: ['Validation', 'Manual_intervention', 'Api_call', 'Automation_failure']
+  },
+  stop_action_required: {
+    type: String
+  },
+  automation_type: {
+    type: String,
+    enum: ['Manual', 'Semi-automated', 'Automated'],
+    required: true
+  },
+  script_paste: {
+    type: String
+  },
+  attachments: [
+    {
+      file_name: String,
+      file_url: String,
+      file_type: {
+        type: String,
+        enum: ['Image', 'Pdf', 'Word', 'Script']
+      }
     }
+  ],
+  created_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  created_at: {
+    type: Date,
+    default: Date.now
+  },
+  updated_at: {
+    type: Date,
+    default: Date.now
+  }
 });
 
+// **Generar el step_id correlativo automáticamente**
+stepSchema.pre('save', async function (next) {
+  if (!this.step_id) {
+    const lastStep = await this.constructor.findOne().sort({ created_at: -1 });
+    const lastID = lastStep ? parseInt(lastStep.step_id.split('-')[1]) : 0;
+    this.step_id = `S-${String(lastID + 1).padStart(4, '0')}`;
+  }
+  next();
+});
 
-
-module.exports = mongoose.model('Step', StepSchema);
+module.exports = mongoose.model('Step', stepSchema);
