@@ -5,7 +5,8 @@ const {
     deleteTestSuite,
     getTestSuites,
     getTestSuiteById,
-    getTestSuiteHierarchy
+    getTestSuiteHierarchy,
+    getTestSuitesByProject
 } = require('../controllers/testSuiteController');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
@@ -27,6 +28,9 @@ router.get('/', authMiddleware(['READ_TEST_SUITE']), getTestSuites);
 router.get('/:id', authMiddleware(['READ_TEST_SUITE']), getTestSuiteById);
 
 router.get('/hierarchy/:suite_id', authMiddleware(['READ_TEST_SUITE']), getTestSuiteHierarchy);
+
+// ✅ Obtener todas las Test Suites por Proyecto en formato jerárquico
+router.get('/project/:project_id', authMiddleware(['READ_TEST_SUITE']),getTestSuitesByProject);
 
 
 module.exports = router;

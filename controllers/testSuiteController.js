@@ -9,15 +9,15 @@ exports.createTestSuite = async (req, res) => {
 
         const { suite_name, suite_description, owner_suite_id, project_id, keywords, suite_type, suite_status } = req.body;
 
-        // 🔍 **Validar que el `project_id` exista**
+        // 🔍 Validar que el project_id exista
         console.log("🔍 Buscando Proyecto con ID:", project_id);
-        const project = await Project.findOne({ project_id });
+        const project = await Project.findOne({ project_id }).select('_id');
         if (!project) {
             console.log("❌ Proyecto no encontrado");
             return res.status(400).json({ message: `❌ No se encontró el Proyecto con ID '${project_id}'.` });
         }
 
-        // 🔍 **Evitar `suite_name` duplicado en el mismo proyecto**
+        // 🔍 Evitar suite_name duplicado en el mismo proyecto
         console.log("🔍 Verificando TestSuite duplicada en el proyecto");
         const existingSuite = await TestSuite.findOne({ suite_name: suite_name.trim(), project_id: project._id });
         if (existingSuite) {
@@ -25,35 +25,35 @@ exports.createTestSuite = async (req, res) => {
             return res.status(400).json({ message: `❌ La Test Suite '${suite_name}' ya existe en este proyecto.` });
         }
 
-        // 🔍 **Validar que `owner_suite_id` exista si se proporciona y que pertenezca al mismo proyecto**
+        // 🔍 Validar que owner_suite_id exista y obtener su suite_id (identificador correlativo)
+        let ownerSuiteCorrelative = null;
         if (owner_suite_id) {
             console.log("🔍 Buscando Owner Suite con ID:", owner_suite_id);
-            const parentSuite = await TestSuite.findOne({ suite_id: owner_suite_id });
-
+            const parentSuite = await TestSuite.findOne({ suite_id: owner_suite_id }).select('suite_id project_id');
             if (!parentSuite) {
                 console.log("❌ Owner Suite no encontrada");
                 return res.status(400).json({ message: `❌ No se encontró la Test Suite con ID '${owner_suite_id}'.` });
             }
+            ownerSuiteCorrelative = parentSuite.suite_id;
 
-            // ✅ **Validar que el proyecto de la Test Suite hija sea el mismo que el de la Test Suite padre**
-            if (parentSuite.project_id.toString() !== project._id.toString()) {
+            // Validar que el proyecto de la suite padre sea el mismo
+            if (parentSuite.project_id && parentSuite.project_id.toString() !== project._id.toString()) {
                 console.log("❌ La Test Suite hija pertenece a un proyecto diferente");
                 return res.status(400).json({
-                    message: `❌ No se puede asociar esta Test Suite a '${owner_suite_id}' porque pertenece a un proyecto diferente.` 
+                    message: `❌ No se puede asociar esta Test Suite a '${owner_suite_id}' porque pertenece a un proyecto diferente.`
                 });
             }
 
-            // 🚨 **Validar que la Test Suite padre no tenga casos de prueba asociados**
-            const hasTestCases = await TestCase.findOne({ suite_id: owner_suite_id });
-
+            // Validar que la suite padre no tenga casos de prueba asociados
+            const hasTestCases = await TestCase.findOne({ suite_id: parentSuite._id });
             if (hasTestCases) {
                 return res.status(400).json({
-                    message: `⚠️ No se puede crear una Test Suite bajo '${owner_suite_id}' porque ya tiene casos de prueba asignados. La jerarquía de Test Suites termina cuando una suite tiene casos de prueba.` 
+                    message: `⚠️ No se puede crear una Test Suite bajo '${owner_suite_id}' porque ya tiene casos de prueba asignados.`
                 });
             }
         }
 
-        // 🔍 **Validar Keywords**
+        // 🔍 Validar Keywords
         let keywordObjects = [];
         if (keywords?.length) {
             console.log("🔍 Buscando Keywords:", keywords);
@@ -65,11 +65,11 @@ exports.createTestSuite = async (req, res) => {
         }
 
         console.log("✅ Creando Test Suite...");
-        // ✅ **Crear la Test Suite**
+        // Crear la Test Suite
         const newTestSuite = new TestSuite({
             suite_name: suite_name.trim(),
             suite_description: suite_description.trim(),
-            owner_suite_id,
+            owner_suite_id: ownerSuiteCorrelative, // Se almacena el identificador correlativo
             project_id: project._id, 
             suite_type,
             suite_status,
@@ -86,7 +86,7 @@ exports.createTestSuite = async (req, res) => {
     }
 };
 
-// ✅ **Actualizar una Test Suite**
+// ✅ Actualizar una Test Suite
 exports.updateTestSuite = async (req, res) => {
     try {
         console.log("📌 Recibido en updateTestSuite:", req.body);
@@ -94,7 +94,7 @@ exports.updateTestSuite = async (req, res) => {
         const { suite_name, owner_suite_id, project_id, keywords, suite_type, suite_status, ...updateData } = req.body;
         const suite_id = req.params.id;
 
-        // 🔍 **Verificar si la Test Suite existe**
+        // 🔍 Verificar si la Test Suite existe
         console.log("🔍 Buscando Test Suite con ID:", suite_id);
         const existingSuite = await TestSuite.findOne({ suite_id });
         if (!existingSuite) {
@@ -102,10 +102,10 @@ exports.updateTestSuite = async (req, res) => {
             return res.status(404).json({ message: `❌ Test Suite con ID '${suite_id}' no encontrada.` });
         }
 
-        // 🔍 **Validar `project_id` si se proporciona y asegurarse de que la Test Suite siga en el mismo proyecto**
+        // 🔍 Convertir project_id en _id si se proporciona
         if (project_id && project_id !== existingSuite.project_id.toString()) {
             console.log("🔍 Buscando nuevo Proyecto con ID:", project_id);
-            const newProject = await Project.findOne({ project_id });
+            const newProject = await Project.findOne({ project_id }).select('_id');
             if (!newProject) {
                 console.log("❌ Proyecto no encontrado");
                 return res.status(400).json({ message: `❌ No se encontró el Proyecto con ID '${project_id}'.` });
@@ -113,68 +113,24 @@ exports.updateTestSuite = async (req, res) => {
             updateData.project_id = newProject._id;
         }
 
-        // 🔍 **Si `owner_suite_id` es enviado, validar que la nueva Test Suite padre pertenezca al mismo proyecto**
+        // 🔍 Convertir owner_suite_id en identificador correlativo si se proporciona
         if (owner_suite_id && owner_suite_id !== existingSuite.owner_suite_id) {
             console.log("🔍 Buscando nueva Test Suite padre con ID:", owner_suite_id);
-            const parentSuite = await TestSuite.findOne({ suite_id: owner_suite_id });
-
+            const parentSuite = await TestSuite.findOne({ suite_id: owner_suite_id }).select('suite_id');
             if (!parentSuite) {
                 console.log("❌ Nueva Test Suite padre no encontrada");
                 return res.status(400).json({ message: `❌ No se encontró la Test Suite con ID '${owner_suite_id}'.` });
             }
-
-            // ✅ **Validar que la Test Suite hija siga en el mismo proyecto que la nueva Test Suite padre**
-            if (parentSuite.project_id.toString() !== existingSuite.project_id.toString()) {
-                console.log("❌ Nueva Test Suite padre pertenece a otro proyecto");
-                return res.status(400).json({
-                    message: `❌ No se puede cambiar la Test Suite padre a '${owner_suite_id}' porque pertenece a un proyecto diferente.` 
-                });
-            }
-
-            // 🚨 **Validar que la nueva Test Suite padre no tenga casos de prueba asignados**
-            const hasTestCases = await TestCase.findOne({ suite_id: owner_suite_id });
-
-            if (hasTestCases) {
-                return res.status(400).json({
-                    message: `⚠️ No se puede cambiar la Test Suite padre a '${owner_suite_id}' porque ya tiene casos de prueba asignados. 
-                    La jerarquía de Test Suites termina cuando una suite tiene casos de prueba.` 
-                });
-            }
-
-            updateData.owner_suite_id = owner_suite_id;
+            updateData.owner_suite_id = parentSuite.suite_id;
         }
 
-        // 🔍 **Validar Keywords si se proporcionan**
-        let keywordObjects = [];
-        if (keywords?.length) {
-            console.log("🔍 Buscando Keywords:", keywords);
-            keywordObjects = await Keyword.find({ _id: { $in: keywords } });
-            if (keywordObjects.length !== keywords.length) {
-                console.log("❌ Algunas keywords no existen");
-                return res.status(400).json({ message: "⚠️ Algunas keywords no existen en la base de datos." });
-            }
-            updateData.keywords = keywordObjects.map(k => k._id);
-        }
-
-        // 🔍 **Validar `suite_name` si se proporciona y evitar nombres duplicados en el mismo proyecto**
-        if (suite_name && suite_name.trim() !== existingSuite.suite_name) {
-            const duplicateName = await TestSuite.findOne({ suite_name: suite_name.trim(), project_id: existingSuite.project_id });
-            if (duplicateName) {
-                console.log("❌ Ya existe otra Test Suite con este nombre en el mismo proyecto");
-                return res.status(400).json({ message: `❌ La Test Suite '${suite_name}' ya existe en este proyecto.` });
-            }
-            updateData.suite_name = suite_name.trim();
-        }
-
-        // ✅ **Actualizar la Test Suite**
+        // ✅ Actualizar la Test Suite
         console.log("✅ Actualizando Test Suite...");
         const updatedSuite = await TestSuite.findOneAndUpdate(
             { suite_id },
             updateData,
             { new: true }
-        ).populate('created_by', '_id username')
-         .populate('project_id', '_id project_id project_name')
-         .populate('keywords', '_id keyword_name');
+        );
 
         console.log("✅ Test Suite actualizada exitosamente:", updatedSuite);
         res.json(updatedSuite);
@@ -184,7 +140,7 @@ exports.updateTestSuite = async (req, res) => {
     }
 };
 
-// ✅ **Eliminar una Test Suite**
+// ✅ Eliminar una Test Suite
 exports.deleteTestSuite = async (req, res) => {
     try {
         const deletedSuite = await TestSuite.findOneAndDelete({ suite_id: req.params.id });
@@ -196,7 +152,8 @@ exports.deleteTestSuite = async (req, res) => {
         res.status(500).json({ message: 'Error eliminando Test Suite', error });
     }
 };
-// ✅ **Obtener todas las Test Suites con formato de salida limpio
+
+// ✅ Obtener todas las Test Suites con formato de salida limpio
 exports.getTestSuites = async (req, res) => {
     try {
         const testSuites = await TestSuite.find()
@@ -225,7 +182,8 @@ exports.getTestSuites = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo Test Suites', error });
     }
 };
-// ✅ **Obtener una Test Suite por ID con salida clara**
+
+// ✅ Obtener una Test Suite por ID con salida clara
 exports.getTestSuiteById = async (req, res) => {
     try {
         const suite = await TestSuite.findOne({ suite_id: req.params.id })
@@ -254,50 +212,132 @@ exports.getTestSuiteById = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo Test Suite', error });
     }
 };
-// ✅ **Obtener la jerarquía de Test Suites**
+
+// ✅ Obtener la jerarquía de Test Suites
 exports.getTestSuiteHierarchy = async (req, res) => {
     try {
         const { suite_id } = req.params;
+        console.log(`Buscando jerarquía para la Test Suite: ${suite_id}`);
 
-        console.log(`📌 Buscando jerarquía para la Test Suite: ${suite_id}`);
-
-        // 🔍 **Buscar la Test Suite base**
-        const baseSuite = await TestSuite.findOne({ suite_id });
+        // Buscar la Test Suite base
+        const baseSuite = await TestSuite.findOne({ suite_id }).select('suite_id suite_name owner_suite_id project_id').lean();
         if (!baseSuite) {
-            console.log("❌ Test Suite no encontrada");
             return res.status(404).json({ message: `No se encontró la Test Suite con ID ${suite_id}` });
         }
 
-        // ✅ **Función recursiva para construir la jerarquía**
-        const buildHierarchy = async (parentSuiteId) => {
-            const childSuites = await TestSuite.find({ owner_suite_id: parentSuiteId }).select('suite_id suite_name owner_suite_id');
+        // Obtener el project_id correlativo
+        const project = await Project.findById(baseSuite.project_id).select('project_id').lean();
+        if (!project) {
+            return res.status(404).json({ message: `No se encontró el Proyecto asociado a la Test Suite con ID ${suite_id}` });
+        }
 
-            if (childSuites.length === 0) return []; // No hay hijas, devolver []
+        // Obtener todas las Test Suites del mismo proyecto
+        const allSuites = await TestSuite.find({ project_id: baseSuite.project_id })
+            .select('suite_id suite_name owner_suite_id project_id')
+            .lean();
 
-            let hierarchy = [];
-            for (let child of childSuites) {
-                const children = await buildHierarchy(child.suite_id);
-                hierarchy.push({
-                    suite_id: child.suite_id,
-                    suite_name: child.suite_name,
-                    children: children // Aquí se añaden las subhijas si existen
-                });
-            }
-            return hierarchy;
+        // Función recursiva para construir la jerarquía
+        const buildHierarchy = (parentSuiteId) => {
+            let childrenSuites = allSuites.filter(suite => suite.owner_suite_id === parentSuiteId);
+            return childrenSuites.map(suite => {
+                const subSuites = buildHierarchy(suite.suite_id);
+                let suiteData = {
+                    suite_id: suite.suite_id,
+                    suite_name: suite.suite_name,
+                    project_id: project.project_id
+                };
+                if (suite.owner_suite_id) {
+                    suiteData.owner_suite_id = suite.owner_suite_id;
+                }
+                if (subSuites.length > 0) {
+                    suiteData.children = subSuites;
+                }
+                return suiteData;
+            });
         };
 
-        // 🔄 **Construir la jerarquía de manera recursiva**
-        const hierarchy = await buildHierarchy(suite_id);
-
-        // ✅ **Estructura de salida**
-        res.json({
+        const hierarchy = buildHierarchy(suite_id);
+        let response = {
             suite_id: baseSuite.suite_id,
             suite_name: baseSuite.suite_name,
-            hierarchy: hierarchy
-        });
+            project_id: project.project_id
+        };
+        if (hierarchy.length > 0) {
+            response.children = hierarchy;
+        }
+
+        res.json(response);
 
     } catch (error) {
-        console.error("❌ Error obteniendo jerarquía de Test Suites:", error);
+        console.error("Error obteniendo jerarquía de Test Suites:", error);
         res.status(500).json({ message: 'Error obteniendo jerarquía de Test Suites', error });
+    }
+};
+
+// ✅ Obtener Test Suites por Proyecto
+exports.getTestSuitesByProject = async (req, res) => {
+    try {
+        const { project_id } = req.params;
+        console.log(`Buscando Test Suites para el Proyecto: ${project_id}`);
+
+        // Buscar el Proyecto
+        const project = await Project.findOne({ project_id }).select('_id project_id project_name').lean();
+        if (!project) {
+            return res.status(404).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
+        }
+
+        // Obtener todas las Test Suites del mismo proyecto
+        const allSuites = await TestSuite.find({ project_id: project._id })
+            .select('suite_id suite_name owner_suite_id project_id')
+            .lean();
+
+        if (allSuites.length === 0) {
+            return res.json({
+                project_id: project.project_id,
+                project_name: project.project_name,
+                children: []
+            });
+        }
+
+        // Función recursiva para construir la jerarquía
+        const buildHierarchy = (parentSuiteId) => {
+            let childrenSuites = allSuites.filter(suite => suite.owner_suite_id === parentSuiteId);
+            return childrenSuites.map(suite => {
+                const subSuites = buildHierarchy(suite.suite_id);
+                let suiteData = {
+                    suite_id: suite.suite_id,
+                    suite_name: suite.suite_name,
+                    project_id: project.project_id
+                };
+                if (suite.owner_suite_id) {
+                    suiteData.owner_suite_id = suite.owner_suite_id;
+                }
+                if (subSuites.length > 0) {
+                    suiteData.children = subSuites;
+                }
+                return suiteData;
+            });
+        };
+
+        // Construir jerarquía a partir de las suites de primer nivel
+        const rootSuites = allSuites.filter(suite => !suite.owner_suite_id);
+        const hierarchy = rootSuites.map(rootSuite => ({
+            suite_id: rootSuite.suite_id,
+            suite_name: rootSuite.suite_name,
+            project_id: project.project_id,
+            children: buildHierarchy(rootSuite.suite_id)
+        }));
+
+        const response = {
+            project_id: project.project_id,
+            project_name: project.project_name,
+            children: hierarchy
+        };
+
+        res.json(response);
+
+    } catch (error) {
+        console.error("Error obteniendo Test Suites por Proyecto:", error);
+        res.status(500).json({ message: 'Error obteniendo Test Suites por Proyecto', error });
     }
 };

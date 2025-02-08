@@ -54,7 +54,7 @@ const validateEnum = (value, validValues, fieldName) => {
 
 exports.createProject = async (req, res) => {
     try {
-        const { project_name, product_manager, keywords, celula, ...projectData } = req.body;
+        const { project_name, product_manager, keywords, celula, is_active, ...projectData } = req.body;
         let errors = [];
 
         // 🔍 **Verificar si el nombre ya existe**
@@ -63,18 +63,16 @@ exports.createProject = async (req, res) => {
             return res.status(400).json({ message: `El proyecto con nombre '${project_name}' ya existe.` });
         }
 
-        // 🔍 **Validar que `product_manager` no sea vacío o undefined**
+        // 🔍 **Validaciones**
         if (!product_manager) {
             errors.push("El campo 'product_manager' es obligatorio.");
         } else {
-            // 🔍 **Validar si el product_manager existe en la BD**
             const existingManager = await User.findById(product_manager);
             if (!existingManager) {
                 errors.push(`No se encontró el Product Manager con ID '${product_manager}'.`);
             }
         }
 
-        // 🔍 **Validar `keywords` si se proporcionan**
         let keywordObjects = [];
         if (Array.isArray(keywords) && keywords.length > 0) {
             keywordObjects = await Keyword.find({ _id: { $in: keywords } });
@@ -83,7 +81,6 @@ exports.createProject = async (req, res) => {
             }
         }
 
-        // 🔍 **Validar `celula` si se proporciona**
         if (celula) {
             const existingCelula = await Celula.findById(celula);
             if (!existingCelula) {
@@ -91,7 +88,6 @@ exports.createProject = async (req, res) => {
             }
         }
 
-        // 🚨 **Si hay errores, retornarlos antes de guardar**
         if (errors.length > 0) {
             return res.status(400).json({ message: "Errores en la validación de datos", errors });
         }
@@ -103,12 +99,13 @@ exports.createProject = async (req, res) => {
             product_manager,
             keywords: keywordObjects.map(k => k._id),
             celula,
+            is_active: is_active !== undefined ? is_active : true, // ✅ Ahora toma el valor enviado o usa `true` por defecto
             created_by: req.user.id
         });
 
         await project.save();
 
-        // ✅ **Obtener el proyecto con sus relaciones**
+        // ✅ **Obtener el proyecto con relaciones**
         const fullProject = await Project.findOne({ project_id: project.project_id })
             .populate('created_by', '_id username')
             .populate('product_manager', '_id username')
@@ -116,36 +113,17 @@ exports.createProject = async (req, res) => {
             .populate('keywords', '_id keyword_name')
             .select('-__v -updatedAt');
 
-        // ✅ **Salida estructurada**
-        res.status(201).json({
-            project_id: fullProject.project_id,
-            project_name: fullProject.project_name,
-            description: fullProject.description,
-            created_by: fullProject.created_by ? { _id: fullProject.created_by._id, username: fullProject.created_by.username } : null,
-            product_manager: fullProject.product_manager ? { _id: fullProject.product_manager._id, username: fullProject.product_manager.username } : null,
-            celula: fullProject.celula ? { _id: fullProject.celula._id, name: fullProject.celula.celula_name } : null,
-            keywords: fullProject.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
-            project_category: fullProject.project_category,
-            technologies: fullProject.technologies,
-            business_model: fullProject.business_model,
-            security_level: fullProject.security_level,
-            execution_platform: fullProject.execution_platform,
-            maintenance_status: fullProject.maintenance_status,
-            priority: fullProject.priority,
-            complexity: fullProject.complexity,
-            is_active: fullProject.is_active,
-            created_at: fullProject.createdAt
-        });
-
+        res.status(201).json(fullProject);
     } catch (error) {
-        console.error("❌ Error creando proyecto:", error);
+        console.error("Error creando proyecto:", error);
         res.status(500).json({ message: "Error creando proyecto", error });
     }
 };
+
 // ✅ **Actualizar un Proyecto con validaciones**
 exports.updateProject = async (req, res) => {
     try {
-        const { project_name, keywords, celula, product_manager, ...updateData } = req.body;
+        const { project_name, keywords, celula, product_manager, is_active, ...updateData } = req.body;
         const project_id = req.params.id;
 
         // 🔍 **Verificar si el proyecto existe**
@@ -154,11 +132,9 @@ exports.updateProject = async (req, res) => {
             return res.status(404).json({ message: `Proyecto con ID ${project_id} no encontrado` });
         }
 
-        // 🔍 **Validar y limpiar `project_name` si se envía**
         if (project_name && typeof project_name === 'string') {
             const trimmedProjectName = project_name.trim();
 
-            // 🔍 **Verificar si otro proyecto ya tiene este nombre**
             const existingName = await Project.findOne({ project_name: trimmedProjectName, project_id: { $ne: project_id } });
             if (existingName) {
                 return res.status(400).json({ message: `El nombre del proyecto '${trimmedProjectName}' ya está en uso.` });
@@ -166,7 +142,6 @@ exports.updateProject = async (req, res) => {
             updateData.project_name = trimmedProjectName;
         }
 
-        // 🔍 **Validar `keywords` si se envían**
         let keywordObjects = [];
         if (Array.isArray(keywords) && keywords.length > 0) {
             keywordObjects = await Keyword.find({ _id: { $in: keywords } });
@@ -176,7 +151,6 @@ exports.updateProject = async (req, res) => {
             updateData.keywords = keywordObjects.map(k => k._id);
         }
 
-        // 🔍 **Validar `celula` si se envía**
         if (celula) {
             const existingCelula = await Celula.findById(celula);
             if (!existingCelula) {
@@ -185,13 +159,16 @@ exports.updateProject = async (req, res) => {
             updateData.celula = celula;
         }
 
-        // 🔍 **Validar `product_manager` si se envía**
         if (product_manager) {
             const existingManager = await User.findById(product_manager);
             if (!existingManager) {
                 return res.status(400).json({ message: `No se encontró el Product Manager con ID ${product_manager}` });
             }
             updateData.product_manager = product_manager;
+        }
+
+        if (is_active !== undefined) {
+            updateData.is_active = is_active;
         }
 
         // ✅ **Actualizar el Proyecto**
@@ -207,7 +184,7 @@ exports.updateProject = async (req, res) => {
 
         res.json(updatedProject);
     } catch (error) {
-        console.error("❌ Error actualizando proyecto:", error);
+        console.error("Error actualizando proyecto:", error);
         res.status(500).json({ message: 'Error actualizando proyecto', error });
     }
 };
@@ -226,33 +203,16 @@ exports.deleteProject = async (req, res) => {
 exports.getProjects = async (req, res) => {
     try {
         const projects = await Project.find()
-            .populate('created_by', '_id username') // ✅ ID y username
-            .populate('product_manager', '_id username') // ✅ ID y username
-            .populate('celula', '_id celula_name') // ✅ ID y nombre de la célula
-            .populate('keywords', '_id keyword_name') // ✅ ID y nombre de la keyword
-            .select('project_id project_name project_category business_model security_level execution_platform maintenance_status priority complexity created_at') // ✅ Solo los campos esenciales
-            .lean(); // ✅ Optimiza la consulta al devolver objetos JSON puros
+            .populate('created_by', '_id username')
+            .populate('product_manager', '_id username')
+            .populate('celula', '_id celula_name')
+            .populate('keywords', '_id keyword_name')
+            .select('-__v -updatedAt')
+            .lean();
 
-        const formattedProjects = projects.map(proj => ({
-            project_id: proj.project_id,
-            project_name: proj.project_name,
-            project_category: proj.project_category,
-            business_model: proj.business_model,
-            security_level: proj.security_level,
-            execution_platform: proj.execution_platform,
-            maintenance_status: proj.maintenance_status,
-            priority: proj.priority,
-            complexity: proj.complexity,
-            created_by: proj.created_by ? { id: proj.created_by._id, username: proj.created_by.username } : null,
-            product_manager: proj.product_manager ? { id: proj.product_manager._id, username: proj.product_manager.username } : null,
-            celula: proj.celula ? { id: proj.celula._id, name: proj.celula.celula_name } : null,
-            keywords: proj.keywords.map(k => ({ id: k._id, name: k.keyword_name })),
-            created_at: proj.created_at
-        }));
-
-        res.json(formattedProjects);
+        res.json(projects);
     } catch (error) {
-        console.error("❌ Error obteniendo Proyectos:", error);
+        console.error("Error obteniendo proyectos:", error);
         res.status(500).json({ message: 'Error obteniendo proyectos', error });
     }
 };
@@ -260,37 +220,20 @@ exports.getProjects = async (req, res) => {
 exports.getProjectById = async (req, res) => {
     try {
         const project = await Project.findOne({ project_id: req.params.id })
-            .populate('created_by', '_id username') // ✅ ID y username
-            .populate('product_manager', '_id username') // ✅ ID y username
-            .populate('celula', '_id celula_name') // ✅ ID y nombre de la célula
-            .populate('keywords', '_id keyword_name') // ✅ ID y nombre de la keyword
-            .select('project_id project_name project_category business_model security_level execution_platform maintenance_status priority complexity created_at') // ✅ Solo los campos esenciales
-            .lean(); // ✅ Optimiza la consulta al devolver objetos JSON puros
+            .populate('created_by', '_id username')
+            .populate('product_manager', '_id username')
+            .populate('celula', '_id celula_name')
+            .populate('keywords', '_id keyword_name')
+            .select('-__v -updatedAt')
+            .lean();
 
         if (!project) {
             return res.status(404).json({ message: 'Proyecto no encontrado' });
         }
 
-        const formattedProject = {
-            project_id: project.project_id,
-            project_name: project.project_name,
-            project_category: project.project_category,
-            business_model: project.business_model,
-            security_level: project.security_level,
-            execution_platform: project.execution_platform,
-            maintenance_status: project.maintenance_status,
-            priority: project.priority,
-            complexity: project.complexity,
-            created_by: project.created_by ? { id: project.created_by._id, username: project.created_by.username } : null,
-            product_manager: project.product_manager ? { id: project.product_manager._id, username: project.product_manager.username } : null,
-            celula: project.celula ? { id: project.celula._id, name: project.celula.celula_name } : null,
-            keywords: project.keywords.map(k => ({ id: k._id, name: k.keyword_name })),
-            created_at: project.created_at
-        };
-
-        res.json(formattedProject);
+        res.json(project);
     } catch (error) {
-        console.error("❌ Error obteniendo Proyecto:", error);
+        console.error("Error obteniendo Proyecto:", error);
         res.status(500).json({ message: 'Error obteniendo proyecto', error });
     }
 };
@@ -371,7 +314,6 @@ const validEnums = {
         'Crítica - Normativas estrictas'
     ]
 };
-
 // ✅ Método para obtener los enums permitidos
 exports.getProjectEnums = async (req, res) => {
     try {

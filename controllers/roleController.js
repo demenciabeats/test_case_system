@@ -104,9 +104,6 @@ exports.updateRole = async (req, res) => {
     }
 };
 
-/**
- * Eliminar rol con validación de existencia y advertencia si está asignado a usuarios.
- */
 exports.deleteRole = async (req, res) => {
     try {
         // 🔍 Verificar si el rol existe antes de eliminarlo
@@ -118,19 +115,17 @@ exports.deleteRole = async (req, res) => {
         // 🔍 Verificar si el rol está asignado a usuarios
         const usersWithRole = await UserRole.find({ role_id: req.params.id }).populate('user_id', '_id username');
 
-        let warningMessage = null;
-        if (usersWithRole.length > 0) {
-            warningMessage = `Este rol está asignado a ${usersWithRole.length} usuario(s). Estos usuarios perderán acceso.`;
+        // 🔍 Filtrar los resultados que puedan tener `user_id` nulo
+        const validUsersWithRole = usersWithRole.filter(ur => ur.user_id !== null);
 
-            // Opcional: Listar los usuarios afectados en la respuesta
-            const affectedUsers = usersWithRole.map(ur => ({
+        if (validUsersWithRole.length > 0) {
+            const affectedUsers = validUsersWithRole.map(ur => ({
                 _id: ur.user_id._id,
                 username: ur.user_id.username
             }));
 
             return res.status(400).json({ 
                 message: "No se puede eliminar el rol porque está asignado a usuarios.", 
-                warning: warningMessage,
                 affected_users: affectedUsers 
             });
         }
@@ -140,6 +135,7 @@ exports.deleteRole = async (req, res) => {
         res.json({ message: 'Rol eliminado correctamente.' });
 
     } catch (error) {
+        console.error("Error eliminando rol:", error);
         res.status(500).json({ message: 'Error eliminando rol', error });
     }
 };

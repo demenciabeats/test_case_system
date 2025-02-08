@@ -22,6 +22,36 @@ const validateEnum = (value, validValues, fieldName) => {
     }
     return null;
 };
+// ✅ **Función auxiliar para formatear la salida**
+const formatRequirement = (req) => ({
+    requirement_id: req.requirement_id,
+    _id: req._id,
+    requirement_name: req.requirement_name,
+    description: req.description,
+    project_id: req.project_id,
+    status: req.status,
+    requirement_type: req.requirement_type,
+    priority: req.priority,
+    complexity: req.complexity,
+    created_by: req.created_by ? { _id: req.created_by._id, username: req.created_by.username } : null,
+    tech_lead: req.tech_lead ? { _id: req.tech_lead._id, username: req.tech_lead.username } : null,
+    testers: req.testers.map(t => ({ _id: t._id, username: t.username })),
+    celula: req.celula ? { _id: req.celula._id, name: req.celula.celula_name } : null,
+    builds: req.builds.map(b => ({
+        build_id: b.build_id,
+        build_name: b.build_name,
+        version: b.version,
+        status: b.status,
+    })),
+    keywords: req.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
+    external_id: req.external_id,
+    external_link: req.external_link,
+    sprints: req.sprints,
+    estimated_end_date: req.estimated_end_date,
+    start_date: req.start_date,
+    end_date: req.end_date,
+    createdAt: req.createdAt
+});
 
 // ✅ Crear un Requerimiento con Validaciones de Duplicidad por Proyecto
 exports.createRequirement = async (req, res) => {
@@ -190,40 +220,13 @@ exports.getRequirements = async (req, res) => {
             .select('-__v -updatedAt')
             .sort({ createdAt: -1 });
 
-        res.json(requirements.map(req => ({
-            requirement_id: req.requirement_id,
-            _id: req._id,
-            requirement_name: req.requirement_name,
-            description: req.description,
-            project_id: req.project_id,
-            status: req.status,
-            requirement_type: req.requirement_type,
-            priority: req.priority,
-            complexity: req.complexity,
-            created_by: req.created_by ? { _id: req.created_by._id, username: req.created_by.username } : null,
-            tech_lead: req.tech_lead ? { _id: req.tech_lead._id, username: req.tech_lead.username } : null,
-            testers: req.testers.map(t => ({ _id: t._id, username: t.username })),
-            celula: req.celula ? { _id: req.celula._id, name: req.celula.celula_name } : null,
-            builds: req.builds.map(b => ({
-                build_id: b.build_id,
-                build_name: b.build_name,
-                version: b.version,
-                status: b.status,
-            })),
-            keywords: req.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
-            external_id: req.external_id,
-            external_link: req.external_link,
-            sprints: req.sprints,
-            estimated_end_date: req.estimated_end_date,
-            start_date: req.start_date,
-            end_date: req.end_date,
-            createdAt: req.createdAt
-        })));
+        res.json(requirements.map(req => formatRequirement(req)));
     } catch (error) {
         console.error("❌ Error obteniendo Requerimientos:", error);
         res.status(500).json({ message: 'Error obteniendo requerimientos', error });
     }
 };
+
 // ✅ Obtener un Requerimiento por ID con salida optimizada y consistente
 exports.getRequirementById = async (req, res) => {
     try {
@@ -240,34 +243,13 @@ exports.getRequirementById = async (req, res) => {
             return res.status(404).json({ message: 'Requerimiento no encontrado' });
         }
 
-        res.json({
-            requirement_id: requirement.requirement_id,
-            _id: requirement._id,
-            requirement_name: requirement.requirement_name,
-            description: requirement.description,
-            project_id: requirement.project_id,
-            status: requirement.status,
-            requirement_type: requirement.requirement_type,
-            priority: requirement.priority,
-            complexity: requirement.complexity,
-            created_by: requirement.created_by ? { _id: requirement.created_by._id, username: requirement.created_by.username } : null,
-            tech_lead: requirement.tech_lead ? { _id: requirement.tech_lead._id, username: requirement.tech_lead.username } : null,
-            testers: requirement.testers.map(t => ({ _id: t._id, username: t.username })),
-            celula: requirement.celula ? { _id: requirement.celula._id, name: requirement.celula.celula_name } : null,
-            keywords: requirement.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
-            external_id: requirement.external_id,
-            external_link: requirement.external_link,
-            sprints: requirement.sprints,
-            estimated_end_date: requirement.estimated_end_date,
-            start_date: requirement.start_date,
-            end_date: requirement.end_date,
-            createdAt: requirement.createdAt
-        });
+        res.json(formatRequirement(requirement));
     } catch (error) {
         console.error("❌ Error obteniendo Requerimiento:", error);
         res.status(500).json({ message: 'Error obteniendo requerimiento', error });
     }
 };
+
 // ✅ Obtener un Requerimiento por external_id con salida optimizada
 exports.getRequirementByExternalId = async (req, res) => {
     try {
@@ -277,40 +259,12 @@ exports.getRequirementByExternalId = async (req, res) => {
             .populate('celula', 'celula_name _id')
             .populate('testers', 'username _id')
             .populate('keywords', '_id keyword_name')
-            .populate('builds', 'build_id build_name version status created_by')
+            .populate('builds', 'build_id build_name version status')
             .select('-__v -updatedAt');
 
         if (!requirement) return res.status(404).json({ message: 'Requerimiento no encontrado' });
 
-        res.json({
-            requirement_id: requirement.requirement_id,
-            requirement_name: requirement.requirement_name,
-            description: requirement.description,
-            project_id: requirement.project_id,
-            status: requirement.status,
-            requirement_type: requirement.requirement_type,
-            priority: requirement.priority,
-            complexity: requirement.complexity,
-            created_by: requirement.created_by ? { _id: requirement.created_by._id, username: requirement.created_by.username } : null,
-            tech_lead: requirement.tech_lead ? { _id: requirement.tech_lead._id, username: requirement.tech_lead.username } : null,
-            testers: requirement.testers.map(t => ({ _id: t._id, username: t.username })),
-            celula: requirement.celula ? { _id: requirement.celula._id, name: requirement.celula.celula_name } : null,
-            builds: requirement.builds.map(b => ({
-                build_id: b.build_id,
-                build_name: b.build_name,
-                version: b.version,
-                status: b.status,
-                created_by: b.created_by ? { _id: b.created_by._id, username: b.created_by.username } : null
-            })),
-            keywords: requirement.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
-            external_id: requirement.external_id,
-            external_link: requirement.external_link,
-            sprints: requirement.sprints,
-            estimated_end_date: requirement.estimated_end_date,
-            start_date: requirement.start_date,
-            end_date: requirement.end_date,
-            createdAt: requirement.createdAt
-        });
+        res.json(formatRequirement(requirement));
     } catch (error) {
         console.error("❌ Error obteniendo Requerimiento por external_id:", error);
         res.status(500).json({ message: 'Error obteniendo requerimiento por external_id', error });

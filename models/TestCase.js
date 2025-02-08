@@ -14,8 +14,8 @@ const TestCaseSchema = new mongoose.Schema({
     status: { type: String, enum: validStatuses, default: 'Borrador' },
     test_type: { type: String, enum: validTestTypes, required: true },
     automation_status: { type: String, enum: validAutomationStatuses, required: true },
-    suite_id: { type: String, required: true },
-    project_id: { type: String, required: true },
+    suite_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TestSuite', required: true }, // Cambiado a ObjectId
+    project_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true }, // Cambiado a ObjectId
     expected_result: { type: String },
     duration_in_minutes: { type: Number, default: 0 },
     tester_occupation: { type: Number, default: 1 },
