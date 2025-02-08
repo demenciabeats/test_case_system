@@ -215,8 +215,6 @@ exports.getTestCasesBySuite = async (req, res) => {
     }
 };
 
-
-
 exports.getTestCasesByProject = async (req, res) => {
     try {
         const { projectId } = req.params;
@@ -258,7 +256,6 @@ exports.getTestCasesByProject = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo TestCases por Proyecto', error });
     }
 };
-
 
 exports.deleteTestCase = async (req, res) => {
     try {
@@ -375,7 +372,6 @@ exports.getTestCasesHierarchyByProject = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo la jerarquía de Test Cases por Proyecto', error });
     }
 };
-
 
 exports.updateTestCase = async (req, res) => {
     try {

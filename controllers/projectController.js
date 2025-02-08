@@ -188,6 +188,7 @@ exports.updateProject = async (req, res) => {
         res.status(500).json({ message: 'Error actualizando proyecto', error });
     }
 };
+
 // ✅ **Eliminar un Proyecto**
 exports.deleteProject = async (req, res) => {
     try {
@@ -199,6 +200,7 @@ exports.deleteProject = async (req, res) => {
         res.status(500).json({ message: 'Error eliminando proyecto', error });
     }
 };
+
 // ✅ **Obtener todos los Proyectos con salida estructurada y optimizada**
 exports.getProjects = async (req, res) => {
     try {
@@ -216,6 +218,7 @@ exports.getProjects = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo proyectos', error });
     }
 };
+
 // ✅ **Obtener un Proyecto por su ID con salida estructurada y optimizada**
 exports.getProjectById = async (req, res) => {
     try {
@@ -237,6 +240,7 @@ exports.getProjectById = async (req, res) => {
         res.status(500).json({ message: 'Error obteniendo proyecto', error });
     }
 };
+
 // ✅ Valores permitidos para los enums con descripciones
 const validEnums = {
     project_category: [
@@ -314,6 +318,7 @@ const validEnums = {
         'Crítica - Normativas estrictas'
     ]
 };
+
 // ✅ Método para obtener los enums permitidos
 exports.getProjectEnums = async (req, res) => {
     try {

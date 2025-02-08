@@ -1,8 +1,5 @@
 const Permission = require('../models/Permission');
 
-/**
- * Crear un permiso con validación de duplicado.
- */
 exports.createPermission = async (req, res) => {
     try {
         const { permission_name } = req.body;
@@ -29,9 +26,6 @@ exports.createPermission = async (req, res) => {
     }
 };
 
-/**
- * Obtener todos los permisos con detalles del creador.
- */
 exports.getPermissions = async (req, res) => {
     try {
         const permissions = await Permission.find()
@@ -42,9 +36,6 @@ exports.getPermissions = async (req, res) => {
     }
 };
 
-/**
- * Obtener un permiso por ID con validación de existencia.
- */
 exports.getPermissionById = async (req, res) => {
     try {
         const permission = await Permission.findById(req.params.id)
@@ -59,9 +50,6 @@ exports.getPermissionById = async (req, res) => {
     }
 };
 
-/**
- * Buscar permiso por nombre con validación.
- */
 exports.getPermissionByName = async (req, res) => {
     try {
         const permission = await Permission.findOne({ 
@@ -77,9 +65,6 @@ exports.getPermissionByName = async (req, res) => {
     }
 };
 
-/**
- * Actualizar permiso con validación de duplicados.
- */
 exports.updatePermission = async (req, res) => {
     try {
         const { permission_name } = req.body;
@@ -109,9 +94,6 @@ exports.updatePermission = async (req, res) => {
     }
 };
 
-/**
- * Eliminar permiso con validación de existencia.
- */
 exports.deletePermission = async (req, res) => {
     try {
         const deletedPermission = await Permission.findByIdAndDelete(req.params.id);

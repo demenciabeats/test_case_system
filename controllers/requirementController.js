@@ -6,11 +6,11 @@ const Project = require('../models/Project');
 const User = require('../models/User');  // Para `created_by`, `tech_lead`, `testers`
 const Celula = require('../models/Celula'); // Para `celula`
 
-// Valores permitidos para los ENUMs
+/* Valores permitidos para los ENUMs
 const validStatuses = ['Pendiente - PreQA', 'En Desarrollo - Development', 'QA', 'Aprobado', 'Rechazado'];
 const validRequirementTypes = ['Funcional', 'No Funcional', 'Seguridad', 'Rendimiento', 'Usabilidad'];
 const validPriorities = ['Baja', 'Media Baja', 'Media', 'Alta', 'Crítica'];
-const validComplexities = ['Baja', 'Media', 'Alta', 'Muy Alta'];
+const validComplexities = ['Baja', 'Media', 'Alta', 'Muy Alta'];*/
 
 // Estados no permitidos para agregar una Build a un Requerimiento
 const invalidBuildStatuses = ['En Ejecucion', 'Completada', 'Fallida'];
@@ -56,103 +56,62 @@ const formatRequirement = (req) => ({
 // ✅ Crear un Requerimiento con Validaciones de Duplicidad por Proyecto
 exports.createRequirement = async (req, res) => {
     try {
-        const { requirement_name, external_id, project_id, tech_lead, celula, testers, builds, keywords } = req.body;
+        const { requirement_type, status, priority, complexity } = req.body;
         let errors = [];
 
-        // ✅ **Validar que el `project_id` exista**
-        if (!project_id) {
-            errors.push("El campo 'project_id' es obligatorio.");
-        } else {
-            const existingProject = await Project.findOne({ project_id });
-            if (!existingProject) {
-                errors.push(`No se encontró un Proyecto con ID '${project_id}'.`);
-            }
-        }
+        // **Validar ENUMs**
+        let enumErrors = [
+            validateEnum(status, ['Pendiente - PreQA', 'En Desarrollo - Development', 'QA', 'Aprobado', 'Rechazado'], 'status'),
+            validateEnum(requirement_type, ['Funcional', 'No Funcional', 'Seguridad', 'Rendimiento', 'Usabilidad'], 'requirement_type'),
+            validateEnum(priority, ['Baja', 'Media Baja', 'Media', 'Alta', 'Crítica'], 'priority'),
+            validateEnum(complexity, ['Baja', 'Media', 'Alta', 'Muy Alta'], 'complexity')
+        ].filter(error => error !== null);
 
-        // ✅ **Validar que el `requirement_name` sea único dentro del mismo `project_id`**
-        const existingRequirement = await Requirement.findOne({ requirement_name, project_id });
-        if (existingRequirement) {
-            errors.push(`El nombre '${requirement_name}' ya está en uso dentro del proyecto '${project_id}'.`);
-        }
+        errors.push(...enumErrors);
 
-        // ✅ **Validar que el `external_id` sea único dentro del mismo `project_id`**
-        if (external_id) {
-            const existingExternal = await Requirement.findOne({ external_id, project_id });
-            if (existingExternal) {
-                errors.push(`El ID externo '${external_id}' ya está en uso dentro del proyecto '${project_id}'.`);
-            }
-        }
-
-        // ✅ **Si hay errores, retornar antes de continuar**
+        // **Si hay errores de ENUM, se retorna enseguida**
         if (errors.length > 0) {
-            return res.status(400).json({ message: 'Errores en la validación de datos', errors });
+            return res.status(400).json({ 
+                message: 'Errores en la validación de datos', 
+                errors 
+            });
         }
 
-        // ✅ **Crear el Requerimiento**
-        const requirement = new Requirement({
-            ...req.body,
-            requirement_name: requirement_name.trim(),
-            created_by: req.user.id
+        const requirement = new Requirement({ 
+            ...req.body, 
+            created_by: req.user.id 
         });
-
         await requirement.save();
 
-        // ✅ **Obtener el requerimiento con sus relaciones**
-        const fullRequirement = await Requirement.findOne({ requirement_id: requirement.requirement_id })
-            .populate('created_by tech_lead celula testers builds')
-            .populate('keywords', 'keyword_name');
-
-        res.status(201).json({
-            message: "Requerimiento creado exitosamente.",
-            requirement: {
-                requirement_id: fullRequirement.requirement_id,
-                _id: fullRequirement._id,
-                requirement_name: fullRequirement.requirement_name,
-                description: fullRequirement.description,
-                project_id: fullRequirement.project_id,
-                status: fullRequirement.status,
-                requirement_type: fullRequirement.requirement_type,
-                priority: fullRequirement.priority,
-                complexity: fullRequirement.complexity,
-                created_by: fullRequirement.created_by ? { _id: fullRequirement.created_by._id, username: fullRequirement.created_by.username } : null,
-                tech_lead: fullRequirement.tech_lead ? { _id: fullRequirement.tech_lead._id, username: fullRequirement.tech_lead.username } : null,
-                testers: fullRequirement.testers.map(t => ({ _id: t._id, username: t.username })),
-                celula: fullRequirement.celula ? { _id: fullRequirement.celula._id, name: fullRequirement.celula.celula_name } : null,
-                builds: fullRequirement.builds.map(b => ({
-                    build_id: b.build_id,
-                    build_name: b.build_name,
-                    version: b.version,
-                    status: b.status,
-                })),
-                keywords: fullRequirement.keywords.map(k => ({ _id: k._id, name: k.keyword_name })),
-                external_id: fullRequirement.external_id,
-                external_link: fullRequirement.external_link,
-                sprints: fullRequirement.sprints,
-                estimated_end_date: fullRequirement.estimated_end_date,
-                start_date: fullRequirement.start_date,
-                end_date: fullRequirement.end_date,
-                createdAt: fullRequirement.createdAt
-            }
+        return res.status(201).json({
+            message: 'Requerimiento creado exitosamente',
+            requirement
         });
 
     } catch (error) {
         console.error("❌ Error creando requerimiento:", error);
 
-        // ✅ Manejo de error de clave duplicada
+        // **Capturar error de clave duplicada (código 11000)**
         if (error.code === 11000) {
+            const field = Object.keys(error.keyValue)[0];
+            const value = error.keyValue[field];
             return res.status(400).json({
                 message: "Error de duplicidad",
                 error: {
-                    field: Object.keys(error.keyPattern)[0],
-                    value: error.keyValue[Object.keys(error.keyPattern)[0]],
-                    message: `El valor '${error.keyValue[Object.keys(error.keyPattern)[0]]}' ya está en uso.`
+                    field: field,
+                    value: value,
+                    message: `El campo '${field}' con valor '${value}' ya está en uso. Por favor, use un valor distinto.`
                 }
             });
         }
 
-        res.status(500).json({ message: 'Error creando requerimiento', error });
+        return res.status(500).json({ 
+            message: 'Error creando requerimiento', 
+            error 
+        });
     }
 };
+
 // ✅ **Actualizar un Requerimiento con validaciones**
 exports.updateRequirement = async (req, res) => {
     try {
@@ -162,10 +121,24 @@ exports.updateRequirement = async (req, res) => {
         // ✅ **Verificar si el requerimiento existe**
         const existingRequirement = await Requirement.findOne({ requirement_id: id });
         if (!existingRequirement) {
-            return res.status(404).json({ message: `Requerimiento con ID '${id}' no encontrado.` });
+            return res.status(404).json({ 
+                message: `Requerimiento con ID '${id}' no encontrado.` 
+            });
         }
 
-        // ✅ **Validar que el `requirement_name` no esté duplicado en el mismo `project_id`**
+        let errors = [];
+
+        // ✅ **Validar ENUMs antes de actualizar**
+        let enumErrors = [
+            validateEnum(updateData.status, ['Pendiente - PreQA', 'En Desarrollo - Development', 'QA', 'Aprobado', 'Rechazado'], 'status'),
+            validateEnum(updateData.requirement_type, ['Funcional', 'No Funcional', 'Seguridad', 'Rendimiento', 'Usabilidad'], 'requirement_type'),
+            validateEnum(updateData.priority, ['Baja', 'Media Baja', 'Media', 'Alta', 'Crítica'], 'priority'),
+            validateEnum(updateData.complexity, ['Baja', 'Media', 'Alta', 'Muy Alta'], 'complexity')
+        ].filter(error => error !== null);
+
+        errors.push(...enumErrors);
+
+        // ✅ **Validar nombre único en el mismo `project_id`**
         if (requirement_name && requirement_name.trim() !== existingRequirement.requirement_name) {
             const duplicateRequirement = await Requirement.findOne({
                 requirement_name: requirement_name.trim(),
@@ -173,7 +146,7 @@ exports.updateRequirement = async (req, res) => {
                 requirement_id: { $ne: id }
             });
             if (duplicateRequirement) {
-                return res.status(400).json({ message: `Ya existe un Requerimiento con el nombre '${requirement_name}' en este proyecto.` });
+                errors.push(`Ya existe un Requerimiento con el nombre '${requirement_name}' en este proyecto.`);
             }
             updateData.requirement_name = requirement_name.trim();
         }
@@ -186,27 +159,64 @@ exports.updateRequirement = async (req, res) => {
                 requirement_id: { $ne: id }
             });
             if (duplicateExternalId) {
-                return res.status(400).json({ message: `El External ID '${external_id}' ya está asociado a otro requerimiento en este proyecto.` });
+                errors.push(`El External ID '${external_id}' ya está asociado a otro requerimiento en este proyecto.`);
             }
             updateData.external_id = external_id;
         }
+
+        // ✅ **Si hay errores, retornar antes de continuar**
+        if (errors.length > 0) {
+            return res.status(400).json({ 
+                message: 'Errores en la validación de datos', 
+                errors 
+            });
+        }
+
+        // ✅ **Evitar modificar `created_by` para proteger la autoría**
+        updateData.created_by = existingRequirement.created_by;
 
         // ✅ **Actualizar el requerimiento**
         const updatedRequirement = await Requirement.findOneAndUpdate(
             { requirement_id: id },
             updateData,
-            { new: true }
+            { new: true }  // Devuelve el documento ya actualizado
         );
 
         if (!updatedRequirement) {
-            return res.status(404).json({ message: 'Requerimiento no encontrado' });
+            return res.status(404).json({ 
+                message: 'Requerimiento no encontrado' 
+            });
         }
-        res.json(updatedRequirement);
+
+        return res.json({
+            message: 'Requerimiento actualizado exitosamente',
+            requirement: updatedRequirement
+        });
+
     } catch (error) {
         console.error("❌ Error actualizando requerimiento:", error);
-        res.status(500).json({ message: 'Error actualizando requerimiento', error });
+
+        // **Capturar error de clave duplicada (código 11000)**
+        if (error.code === 11000) {
+            const field = Object.keys(error.keyValue)[0];
+            const value = error.keyValue[field];
+            return res.status(400).json({
+                message: "Error de duplicidad",
+                error: {
+                    field: field,
+                    value: value,
+                    message: `El campo '${field}' con valor '${value}' ya está en uso. Por favor, use un valor distinto.`
+                }
+            });
+        }
+
+        return res.status(500).json({ 
+            message: 'Error actualizando requerimiento', 
+            error 
+        });
     }
 };
+
 // ✅ Obtener todos los Requerimientos con salida optimizada y consistente
 exports.getRequirements = async (req, res) => {
     try {
