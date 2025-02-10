@@ -5,7 +5,8 @@ const {
   getStepByID,
   getStepsByName,
   updateStep,
-  deleteStep
+  deleteStep,
+  getStepsByProject
 } = require('../controllers/stepController');
 const { authMiddleware } = require('../middleware/authMiddleware');
 
@@ -17,5 +18,6 @@ router.get('/search', authMiddleware(['READ_STEP']), getStepsByName);
 router.get('/:step_id', authMiddleware(['READ_STEP']), getStepByID);
 router.put('/:step_id', authMiddleware(['UPDATE_STEP']), updateStep);
 router.delete('/:step_id', authMiddleware(['DELETE_STEP']), deleteStep);
+router.get('/project/:project_id',authMiddleware(['READ_STEP']), getStepsByProject);
 
 module.exports = router;

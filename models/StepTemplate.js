@@ -1,17 +1,18 @@
-// models/Step.js
+// models/StepTemplate.js
 
 const mongoose = require('mongoose');
 
-const stepSchema = new mongoose.Schema({
-  step_id: {
+const stepTemplateSchema = new mongoose.Schema({
+  // Correlativo STT-0001, STT-0002...
+  stt_id: {
     type: String,
     unique: true
   },
+
+  // Copia de los campos de Step:
   title: {
     type: String,
     required: true
-    // Eliminamos: unique: true
-    // Porque queremos permitir que el mismo título exista en proyectos distintos
   },
   description: {
     type: String,
@@ -59,19 +60,33 @@ const stepSchema = new mongoose.Schema({
       }
     }
   ],
+
+  // El usuario que crea la copia del step. 
+  // (Podrías conservar el created_by original del Step o usar el user actual)
   created_by: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'User'
+  },
+
+  // Correlativo del proyecto (ej: PRY-0001)
+  project_id: {
+    type: String,
     required: true
   },
 
-  // Referencia al Project por _id
-  project: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Project',
+  // Correlativo del StepCaseTemplate (ej: STC-0001)
+  template_id: {
+    type: String,
     required: true
   },
 
+  // Orden dentro de la plantilla
+  order: {
+    type: Number,
+    default: 1
+  },
+
+  // Timestamps manuales (o podrías usar { timestamps: true })
   created_at: {
     type: Date,
     default: Date.now
@@ -82,14 +97,16 @@ const stepSchema = new mongoose.Schema({
   }
 });
 
-// Generar el step_id correlativo automáticamente
-stepSchema.pre('save', async function (next) {
-  if (!this.step_id) {
-    const lastStep = await this.constructor.findOne().sort({ created_at: -1 });
-    const lastID = lastStep ? parseInt(lastStep.step_id.split('-')[1]) : 0;
-    this.step_id = `S-${String(lastID + 1).padStart(4, '0')}`;
+// Generar STT-XXXX automáticamente
+stepTemplateSchema.pre('save', async function(next) {
+  if (!this.stt_id) {
+    const last = await this.constructor.findOne().sort({ created_at: -1 });
+    const lastNumber = last ? parseInt(last.stt_id.split('-')[1]) : 0;
+    this.stt_id = `STT-${String(lastNumber + 1).padStart(4, '0')}`;
   }
+  // Actualizamos updated_at
+  this.updated_at = new Date();
   next();
 });
 
-module.exports = mongoose.model('Step', stepSchema);
+module.exports = mongoose.model('StepTemplate', stepTemplateSchema);

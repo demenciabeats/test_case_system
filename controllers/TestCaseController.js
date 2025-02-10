@@ -1,465 +1,535 @@
 const mongoose = require('mongoose');
 const TestCase = require('../models/TestCase');
-const Keyword = require('../models/Keyword');
-const Project = require('../models/Project');
 const TestSuite = require('../models/TestSuite');
+const Project = require('../models/Project');
+const Keyword = require('../models/Keyword');
 
-// Validaciones ENUM
-const validPriorities = ['Baja', 'Media', 'Alta', 'Crítica'];
-const validStatuses = ['Borrador', 'Listo', 'Obsoleto'];
-const validTestTypes = ['Funcional', 'Regresión', 'Smoke', 'Performance', 'Seguridad', 'Usabilidad', 'Otro'];
-const validAutomationStatuses = ['Manual', 'Automatizado', 'Semi-Automatizado'];
+// **IMPORTA** tus modelos de StepCaseTemplate y StepTemplate
+const StepCaseTemplate = require('../models/StepCaseTemplate');
+const StepTemplate = require('../models/StepTemplate');
 
-// Función para validar valores ENUM
-const validateEnum = (value, validValues, fieldName) => {
-    if (value && !validValues.includes(value)) {
-        return `El valor '${value}' para '${fieldName}' no es válido. Valores permitidos: ${validValues.join(', ')}.`;
-    }
-    return null;
-};
-
-// ✅ Función para convertir `String` a `ObjectId` si es válido
-const toObjectId = (id) => mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : null;
-
+// 1) CREAR un TestCase
 exports.createTestCase = async (req, res) => {
-    try {
-        const { title, description, priority, status, test_type, automation_status, suite_id, project_id, expected_result, duration_in_minutes, tester_occupation, keywords } = req.body;
+  try {
+    const {
+      title, description, priority, status, test_type, automation_status,
+      suite_id, project_id, expected_result, duration_in_minutes,
+      tester_occupation, keywords,
+      // Nuevo: stc_id => si el usuario desea enlazar una StepCaseTemplate
+      stepCaseTemplate
+    } = req.body;
 
-        // 🔍 Buscar la Test Suite y el Proyecto (usando el correlativo para suite)
-        const suite = await TestSuite.findOne({ suite_id }).populate('project_id', '_id project_id');
-        const project = await Project.findOne({ project_id }).select('_id');
-
-        if (!suite) return res.status(400).json({ message: `❌ No se encontró la Test Suite con ID '${suite_id}'.` });
-        if (!project) return res.status(400).json({ message: `❌ No se encontró el Proyecto con ID '${project_id}'.` });
-
-        // 🚨 Validar que la Test Suite pertenezca al mismo Proyecto
-        if (suite.project_id._id.toString() !== project._id.toString()) {
-            return res.status(400).json({
-                message: `❌ No se puede crear el TestCase en la Test Suite '${suite_id}' porque pertenece a un proyecto diferente ('${suite.project_id.project_id}'). 
-                Asegúrate de seleccionar una Test Suite dentro del mismo proyecto '${project_id}'.`
-            });
-        }
-
-        // 🚨 Validar que la Test Suite sea de último nivel (sin sub Test Suites)
-        const hasChildren = await TestSuite.findOne({ owner_suite_id: suite.suite_id });
-        if (hasChildren) {
-            return res.status(400).json({
-                message: `⚠️ No se pueden asociar casos de prueba a la Test Suite '${suite.suite_id}' porque tiene sub Test Suites. Solo se pueden asignar a Test Suites de último nivel.`
-            });
-        }
-
-        // 🚨 Validar que no exista otro TestCase con el mismo nombre en la misma Test Suite
-        const existingTestCase = await TestCase.findOne({ title: title.trim(), suite_id: suite._id });
-        if (existingTestCase) {
-            return res.status(400).json({
-                message: `⚠️ Ya existe un TestCase con el nombre '${title}' en la Test Suite '${suite_id}'. 
-                No se permiten Test Cases duplicados en la misma Test Suite.`
-            });
-        }
-
-        // 🔍 Validar Keywords
-        let keywordObjects = [];
-        if (keywords?.length) {
-            keywordObjects = await Keyword.find({ _id: { $in: keywords } });
-            if (keywordObjects.length !== keywords.length) {
-                return res.status(400).json({ message: "⚠️ Algunas keywords no existen en la base de datos." });
-            }
-        }
-
-        // ✅ Crear el TestCase
-        const newTestCase = new TestCase({
-            title: title.trim(),
-            description,
-            priority,
-            status,
-            test_type,
-            automation_status,
-            suite_id: suite._id, 
-            project_id: project._id, 
-            expected_result,
-            duration_in_minutes,
-            tester_occupation,
-            created_by: req.user.id,
-            keywords: keywordObjects.map(k => k._id)
-        });
-
-        await newTestCase.save();
-
-        res.status(201).json({
-            message: "✅ TestCase creado exitosamente.",
-            testCase: {
-                testcase_id: newTestCase.testcase_id,
-                title: newTestCase.title,
-                project_id: newTestCase.project_id,
-                suite_id: newTestCase.suite_id
-            }
-        });
-
-    } catch (error) {
-        console.error("❌ Error creando TestCase:", error);
-        res.status(500).json({ message: '❌ Error creando TestCase.', error });
+    // 1. Buscar suite y proyecto
+    const suite = await TestSuite.findOne({ suite_id }).populate('project_id', '_id project_id');
+    if (!suite) {
+      return res.status(400).json({ message: `❌ No se encontró la TestSuite con ID '${suite_id}'.` });
     }
+    const project = await Project.findOne({ project_id }).select('_id');
+    if (!project) {
+      return res.status(400).json({ message: `❌ No se encontró el Proyecto con ID '${project_id}'.` });
+    }
+
+    // Validar que la suite pertenezca al mismo project
+    if (String(suite.project_id._id) !== String(project._id)) {
+      return res.status(400).json({
+        message: `❌ La TestSuite '${suite_id}' pertenece a otro proyecto distinto de '${project_id}'.`
+      });
+    }
+
+    // Verificar suite de último nivel
+    const hasChildren = await TestSuite.findOne({ owner_suite_id: suite.suite_id });
+    if (hasChildren) {
+      return res.status(400).json({
+        message: `⚠️ No se pueden asignar casos a la TestSuite '${suite.suite_id}' porque tiene sub-suites.`
+      });
+    }
+
+    // Verificar duplicado
+    const existingTC = await TestCase.findOne({ title: title.trim(), suite_id: suite._id });
+    if (existingTC) {
+      return res.status(400).json({
+        message: `⚠️ Ya existe un TestCase con el nombre '${title}' en la TestSuite '${suite_id}'.`
+      });
+    }
+
+    // 2. Validar keywords
+    let keywordObjects = [];
+    if (keywords?.length) {
+      keywordObjects = await Keyword.find({ _id: { $in: keywords } });
+      if (keywordObjects.length !== keywords.length) {
+        return res.status(400).json({ message: '⚠️ Algunas keywords no existen en la base de datos.' });
+      }
+    }
+
+    // 3. Validar StepCaseTemplate (si se pasa)
+    let stepCaseTemplateId = null;
+    if (stepCaseTemplate) {
+      // Buscar StepCaseTemplate por stc_id
+      const scTemplateDoc = await StepCaseTemplate.findOne({ stc_id: stepCaseTemplate });
+      if (!scTemplateDoc) {
+        return res.status(400).json({
+          message: `❌ El StepCaseTemplate con id '${stepCaseTemplate}' no existe.`
+        });
+      }
+      // Validar que sea mismo project (scTemplateDoc.project_id es string "PRY-0001")
+      if (scTemplateDoc.project_id !== project_id) {
+        return res.status(400).json({
+          message: `❌ El StepCaseTemplate '${stepCaseTemplate}' no pertenece al mismo Proyecto '${project_id}'.`
+        });
+      }
+      stepCaseTemplateId = scTemplateDoc._id;
+    }
+
+    // 4. Crear TestCase
+    const newTC = new TestCase({
+      title: title.trim(),
+      description,
+      priority,
+      status,
+      test_type,
+      automation_status,
+      suite_id: suite._id,
+      project_id: project._id,
+      expected_result,
+      duration_in_minutes,
+      tester_occupation,
+      created_by: req.user.id,
+      keywords: keywordObjects.map(k => k._id),
+      step_case_template: stepCaseTemplateId // <--- Enlazar la plantilla
+    });
+
+    await newTC.save();
+
+    return res.status(201).json({
+      message: '✅ TestCase creado exitosamente.',
+      testCase: {
+        testcase_id: newTC.testcase_id,
+        title: newTC.title
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error creando TestCase:', error);
+    return res.status(500).json({ message: '❌ Error creando TestCase.', error });
+  }
 };
 
+// Función helper para añadir al response la info del StepCaseTemplate y sus StepTemplates
+async function attachStepCaseTemplateData(testCases) {
+  // testCases puede ser un solo elemento o un array
+  // Normalizamos a array para procesar en bucle
+  const isSingle = !Array.isArray(testCases);
+  const arrayTC = isSingle ? [testCases] : testCases;
+
+  // Para cada testCase, si tiene step_case_template, buscamos su stc_id
+  // y luego buscamos StepTemplates por template_id = stc_id
+  const results = [];
+  for (const tc of arrayTC) {
+    // Copiamos sin mutar
+    const formatted = { ...tc };
+
+    if (tc.step_case_template) {
+      // Buscamos el StepCaseTemplate "populado"
+      // (Si no está poblado, lo populate, o si ya está poblado, lo tenemos en la data)
+      // Asegúrate de .populate('step_case_template') en la query principal
+
+      // Obtenemos stc_id del template
+      const scTemplateDoc = tc.step_case_template;
+      if (scTemplateDoc && scTemplateDoc.stc_id) {
+        // Buscar todos StepTemplates => template_id = stc_id
+        const stepTemplates = await StepTemplate.find({ template_id: scTemplateDoc.stc_id })
+          .sort({ order: 1 })  // Ordenados
+          .lean();
+
+        // Incluimos en la respuesta:
+        formatted.step_case_template = {
+          stc_id: scTemplateDoc.stc_id,
+          name: scTemplateDoc.name,
+          description: scTemplateDoc.description,
+          created_by: scTemplateDoc.created_by,
+          status: scTemplateDoc.status,
+          project_id: scTemplateDoc.project_id,
+          // Adjuntamos los stepTemplates en un array:
+          step_templates: stepTemplates.map(st => ({
+            stt_id: st.stt_id,
+            title: st.title,
+            description: st.description,
+            expected_result: st.expected_result,
+            type: st.type,
+            is_critical: st.is_critical,
+            is_stop_point: st.is_stop_point,
+            stop_reason: st.stop_reason,
+            stop_action_required: st.stop_action_required,
+            automation_type: st.automation_type,
+            script_paste: st.script_paste,
+            attachments: st.attachments,
+            order: st.order,
+            created_by: st.created_by,
+            project_id: st.project_id
+          }))
+        };
+      }
+    }
+    results.push(formatted);
+  }
+
+  return isSingle ? results[0] : results;
+}
+
+// 2) OBTENER TODOS los TestCases
 exports.getTestCases = async (req, res) => {
-    try {
-        const testCases = await TestCase.find()
-            .populate({ path: 'created_by', select: '_id username' })
-            .populate({ path: 'suite_id', model: 'TestSuite', select: 'suite_id suite_name' })
-            .populate({ path: 'project_id', model: 'Project', select: 'project_id project_name' })
-            .populate({ path: 'keywords', select: '_id keyword_name' })
-            .lean();
+  try {
+    const testCases = await TestCase.find()
+      .populate({ path: 'created_by', select: '_id username' })
+      .populate({ path: 'suite_id', model: 'TestSuite', select: 'suite_id suite_name' })
+      .populate({ path: 'project_id', model: 'Project', select: 'project_id project_name' })
+      .populate({ path: 'keywords', select: '_id keyword_name' })
+      // populate la StepCaseTemplate
+      .populate({
+        path: 'step_case_template',
+        select: 'stc_id name description created_by status project_id'
+      })
+      .lean();
 
-        const formattedTestCases = testCases.map(tc => ({
-            testcase_id: tc.testcase_id,
-            title: tc.title,
-            description: tc.description,
-            priority: tc.priority,
-            status: tc.status,
-            test_type: tc.test_type,
-            automation_status: tc.automation_status,
-            suite: tc.suite_id ? { id: tc.suite_id.suite_id, name: tc.suite_id.suite_name } : null,
-            project: tc.project_id ? { id: tc.project_id.project_id, name: tc.project_id.project_name } : null,
-            expected_result: tc.expected_result,
-            duration_in_minutes: tc.duration_in_minutes,
-            tester_occupation: tc.tester_occupation,
-            created_by: tc.created_by ? { id: tc.created_by._id, username: tc.created_by.username } : null,
-            keywords: tc.keywords.map(k => ({ id: k._id, name: k.keyword_name })),
-            created_at: tc.createdAt
-        }));
-
-        res.json(formattedTestCases);
-    } catch (error) {
-        console.error("Error obteniendo TestCases:", error);
-        res.status(500).json({ message: 'Error obteniendo TestCases', error });
-    }
+    // Adjuntar la info de StepTemplates para cada StepCaseTemplate
+    const withTemplates = await attachStepCaseTemplateData(testCases);
+    res.json(withTemplates);
+  } catch (error) {
+    console.error('Error obteniendo TestCases:', error);
+    res.status(500).json({ message: 'Error obteniendo TestCases', error });
+  }
 };
 
+// 3) OBTENER UN TestCase por ID (TC-0001)
 exports.getTestCaseById = async (req, res) => {
-    try {
-        const testCase = await TestCase.findOne({ testcase_id: req.params.id })
-            .populate({ path: 'created_by', select: '_id username' })
-            .populate({ path: 'suite_id', model: 'TestSuite', select: 'suite_id suite_name' })
-            .populate({ path: 'project_id', model: 'Project', select: 'project_id project_name' })
-            .populate({ path: 'keywords', select: '_id keyword_name' })
-            .lean();
+  try {
+    const testCase = await TestCase.findOne({ testcase_id: req.params.id })
+      .populate({ path: 'created_by', select: '_id username' })
+      .populate({ path: 'suite_id', select: 'suite_id suite_name' })
+      .populate({ path: 'project_id', select: 'project_id project_name' })
+      .populate({ path: 'keywords', select: '_id keyword_name' })
+      .populate({
+        path: 'step_case_template',
+        select: 'stc_id name description created_by status project_id'
+      })
+      .lean();
 
-        if (!testCase) return res.status(404).json({ message: 'TestCase no encontrado' });
-
-        res.json({
-            testcase_id: testCase.testcase_id,
-            title: testCase.title,
-            description: testCase.description,
-            priority: testCase.priority,
-            status: testCase.status,
-            test_type: testCase.test_type,
-            automation_status: testCase.automation_status,
-            suite: testCase.suite_id ? { id: testCase.suite_id.suite_id, name: testCase.suite_id.suite_name } : null,
-            project: testCase.project_id ? { id: testCase.project_id.project_id, name: testCase.project_id.project_name } : null,
-            expected_result: testCase.expected_result,
-            duration_in_minutes: testCase.duration_in_minutes,
-            tester_occupation: testCase.tester_occupation,
-            created_by: testCase.created_by ? { id: testCase.created_by._id, username: testCase.created_by.username } : null,
-            keywords: testCase.keywords.map(k => ({ id: k._id, name: k.keyword_name })),
-            created_at: testCase.createdAt
-        });
-    } catch (error) {
-        console.error("Error obteniendo TestCase:", error);
-        res.status(500).json({ message: 'Error obteniendo TestCase', error });
+    if (!testCase) {
+      return res.status(404).json({ message: 'TestCase no encontrado' });
     }
+
+    // Adjuntar info de StepCaseTemplate y StepTemplates
+    const formatted = await attachStepCaseTemplateData(testCase);
+    res.json(formatted);
+  } catch (error) {
+    console.error('Error obteniendo TestCase:', error);
+    res.status(500).json({ message: 'Error obteniendo TestCase', error });
+  }
 };
 
+// 4) LISTAR TestCases por Suite
 exports.getTestCasesBySuite = async (req, res) => {
-    try {
-        const { suiteId } = req.params;
-        // Buscar la TestSuite usando el correlativo (por ejemplo, "TST-0001")
-        const suite = await TestSuite.findOne({ suite_id: suiteId }).select('_id suite_id suite_name');
-        if (!suite) {
-            return res.status(404).json({ message: `No se encontró la Test Suite con ID '${suiteId}'` });
-        }
-
-        // Usar el _id de la TestSuite para buscar los TestCases y obtener los campos relevantes
-        const testCases = await TestCase.find({ suite_id: suite._id })
-            // Se realiza el populate para obtener la información correlativa de las relaciones:
-            .populate({ path: 'created_by', select: '_id username' })
-            .populate({ path: 'keywords', select: '_id keyword_name' })
-            .populate({ path: 'project_id', model: 'Project', select: 'project_id project_name' })
-            .populate({ path: 'suite_id', model: 'TestSuite', select: 'suite_id suite_name' })
-            .lean();
-
-        // Ajustar la salida para que tenga el mismo formato que en getTestCases:
-        const formattedTestCases = testCases.map(tc => ({
-            testcase_id: tc.testcase_id,
-            title: tc.title,
-            description: tc.description,
-            priority: tc.priority,
-            status: tc.status,
-            test_type: tc.test_type,
-            automation_status: tc.automation_status,
-            // Para suite se utiliza el correlativo y el nombre:
-            suite: tc.suite_id ? { id: tc.suite_id.suite_id, name: tc.suite_id.suite_name } : null,
-            // Para project se utiliza el correlativo y el nombre:
-            project: tc.project_id ? { id: tc.project_id.project_id, name: tc.project_id.project_name } : null,
-            expected_result: tc.expected_result,
-            duration_in_minutes: tc.duration_in_minutes,
-            tester_occupation: tc.tester_occupation,
-            created_by: tc.created_by ? { id: tc.created_by._id, username: tc.created_by.username } : null,
-            keywords: tc.keywords.map(k => ({ id: k._id, name: k.keyword_name })),
-            created_at: tc.createdAt
-        }));
-
-        res.json(formattedTestCases);
-    } catch (error) {
-        console.error("Error obteniendo TestCases por TestSuite:", error);
-        res.status(500).json({ message: 'Error obteniendo TestCases por TestSuite', error });
+  try {
+    const { suiteId } = req.params;
+    const suite = await TestSuite.findOne({ suite_id: suiteId }).select('_id suite_id suite_name');
+    if (!suite) {
+      return res.status(404).json({ message: `No se encontró la TestSuite '${suiteId}'` });
     }
+
+    const testCases = await TestCase.find({ suite_id: suite._id })
+      .populate({ path: 'created_by', select: '_id username' })
+      .populate({ path: 'suite_id', select: 'suite_id suite_name' })
+      .populate({ path: 'project_id', select: 'project_id project_name' })
+      .populate({ path: 'keywords', select: '_id keyword_name' })
+      .populate({
+        path: 'step_case_template',
+        select: 'stc_id name description created_by status project_id'
+      })
+      .lean();
+
+    const withTemplates = await attachStepCaseTemplateData(testCases);
+    res.json(withTemplates);
+  } catch (error) {
+    console.error('Error obteniendo TestCases por TestSuite:', error);
+    res.status(500).json({ message: 'Error obteniendo TestCases por TestSuite', error });
+  }
 };
 
+// 5) LISTAR TestCases por Proyecto
 exports.getTestCasesByProject = async (req, res) => {
-    try {
-        const { projectId } = req.params;
-        // Buscar el Proyecto usando el correlativo (por ejemplo, "PRY-0001")
-        const project = await Project.findOne({ project_id: projectId }).select('_id project_id project_name');
-        if (!project) {
-            return res.status(404).json({ message: `No se encontró el Proyecto con ID '${projectId}'` });
-        }
-
-        // Usar el _id del Proyecto para buscar los TestCases
-        const testCases = await TestCase.find({ project_id: project._id })
-            .populate({ path: 'created_by', select: '_id username' })
-            .populate({ path: 'suite_id', model: 'TestSuite', select: 'suite_id suite_name' })
-            .populate({ path: 'project_id', model: 'Project', select: 'project_id project_name' })
-            .populate({ path: 'keywords', select: '_id keyword_name' })
-            .lean();
-
-        const formattedTestCases = testCases.map(tc => ({
-            testcase_id: tc.testcase_id,
-            title: tc.title,
-            description: tc.description,
-            priority: tc.priority,
-            status: tc.status,
-            test_type: tc.test_type,
-            automation_status: tc.automation_status,
-            project: tc.project_id ? { id: tc.project_id.project_id, name: tc.project_id.project_name } : null,
-            suite: tc.suite_id ? { id: tc.suite_id.suite_id, name: tc.suite_id.suite_name } : null,
-            expected_result: tc.expected_result,
-            duration_in_minutes: tc.duration_in_minutes,
-            tester_occupation: tc.tester_occupation,
-            created_by: tc.created_by ? { id: tc.created_by._id, username: tc.created_by.username } : null,
-            keywords: tc.keywords.map(k => ({ id: k._id, name: k.keyword_name })),
-            created_at: tc.createdAt
-        }));
-
-        res.json(formattedTestCases);
-    } catch (error) {
-        console.error("Error obteniendo TestCases por Proyecto:", error);
-        res.status(500).json({ message: 'Error obteniendo TestCases por Proyecto', error });
+  try {
+    const { projectId } = req.params;
+    const project = await Project.findOne({ project_id: projectId }).select('_id project_id project_name');
+    if (!project) {
+      return res.status(404).json({ message: `No se encontró el Proyecto con ID '${projectId}'` });
     }
+
+    const testCases = await TestCase.find({ project_id: project._id })
+      .populate({ path: 'created_by', select: '_id username' })
+      .populate({ path: 'suite_id', select: 'suite_id suite_name' })
+      .populate({ path: 'project_id', select: 'project_id project_name' })
+      .populate({ path: 'keywords', select: '_id keyword_name' })
+      .populate({
+        path: 'step_case_template',
+        select: 'stc_id name description created_by status project_id'
+      })
+      .lean();
+
+    const withTemplates = await attachStepCaseTemplateData(testCases);
+    res.json(withTemplates);
+  } catch (error) {
+    console.error('Error obteniendo TestCases por Proyecto:', error);
+    res.status(500).json({ message: 'Error obteniendo TestCases por Proyecto', error });
+  }
 };
 
-exports.deleteTestCase = async (req, res) => {
-    try {
-        const deletedTestCase = await TestCase.findOneAndDelete({ testcase_id: req.params.id });
-        if (!deletedTestCase) return res.status(404).json({ message: 'TestCase no encontrado' });
-
-        res.json({ message: '✅ TestCase eliminado correctamente' });
-    } catch (error) {
-        res.status(500).json({ message: 'Error eliminando TestCase', error });
-    }
-};
-
+// 6) LISTAR TestCases en Jerarquía por Proyecto
 exports.getTestCasesHierarchyByProject = async (req, res) => {
-    try {
-        const { project_id } = req.params;
+  try {
+    const { project_id } = req.params;
 
-        // 🔍 Buscar el Proyecto por su correlativo
-        const project = await Project.findOne({ project_id })
-            .select('_id project_id project_name')
-            .lean();
-
-        if (!project) {
-            return res.status(404).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
-        }
-
-        // 🔍 Obtener todas las Test Suites del Proyecto
-        const allSuites = await TestSuite.find({ project_id: project._id })
-            .select('_id suite_id suite_name owner_suite_id project_id')
-            .lean();
-
-        // 🔍 Obtener todos los Test Cases del Proyecto
-        const allTestCases = await TestCase.find({ project_id: project._id })
-            .populate('suite_id', 'suite_id')
-            .populate('project_id', 'project_id')
-            .select('_id testcase_id title suite_id project_id')
-            .lean();
-
-        // Filtrar Test Cases inválidos (por si algún TestCase no tiene suite_id o su suite_id no tiene el correlativo)
-        const validTestCases = allTestCases.filter(tc => tc.suite_id && tc.suite_id.suite_id);
-
-        // ✅ Función recursiva para construir la jerarquía
-        const buildHierarchy = (parentSuiteId) => {
-            let childrenSuites = allSuites.filter(suite => String(suite.owner_suite_id) === String(parentSuiteId));
-
-            return childrenSuites.map(suite => {
-                // Buscar los Test Cases asociados a esta suite
-                const suiteTestCases = validTestCases
-                    .filter(tc => String(tc.suite_id.suite_id) === String(suite.suite_id))
-                    .map(tc => ({
-                        testcase_id: tc.testcase_id,
-                        title: tc.title,
-                        suite_id: tc.suite_id.suite_id,
-                        project_id: tc.project_id.project_id
-                    }));
-
-                // Construir el objeto para la suite actual
-                let suiteData = {
-                    suite_id: suite.suite_id,
-                    suite_name: suite.suite_name,
-                    project_id: project.project_id,
-                    test_cases: suiteTestCases
-                };
-
-                // Llamada recursiva para buscar sub suites
-                const subSuites = buildHierarchy(suite.suite_id);
-                if (subSuites.length > 0) {
-                    suiteData.children = subSuites;
-                    // Si la suite es padre (tiene hijos), eliminamos el arreglo de test_cases
-                    delete suiteData.test_cases;
-                }
-
-                return suiteData;
-            });
-        };
-
-        // 🔄 Construcción de la jerarquía desde las suites raíz (aquellas sin owner_suite_id)
-        const rootSuites = allSuites.filter(suite => !suite.owner_suite_id);
-        const hierarchy = rootSuites.map(rootSuite => {
-            let suiteData = {
-                suite_id: rootSuite.suite_id,
-                suite_name: rootSuite.suite_name,
-                project_id: project.project_id,
-                test_cases: validTestCases
-                    .filter(tc => String(tc.suite_id.suite_id) === String(rootSuite.suite_id))
-                    .map(tc => ({
-                        testcase_id: tc.testcase_id,
-                        title: tc.title,
-                        suite_id: tc.suite_id.suite_id,
-                        project_id: tc.project_id.project_id
-                    }))
-            };
-
-            const subSuites = buildHierarchy(rootSuite.suite_id);
-            if (subSuites.length > 0) {
-                suiteData.children = subSuites;
-                // Si la suite raíz tiene sub suites, se elimina el arreglo test_cases
-                delete suiteData.test_cases;
-            }
-
-            return suiteData;
-        });
-
-        // 📌 Estructura de salida con el Proyecto como nodo raíz
-        const response = {
-            project_id: project.project_id,
-            project_name: project.project_name,
-            children: hierarchy
-        };
-
-        console.log("✅ Jerarquía generada:", JSON.stringify(response, null, 2));
-        res.json(response);
-    } catch (error) {
-        console.error("❌ Error obteniendo la jerarquía de Test Cases por Proyecto:", error);
-        res.status(500).json({ message: 'Error obteniendo la jerarquía de Test Cases por Proyecto', error });
+    const project = await Project.findOne({ project_id }).select('_id project_id project_name').lean();
+    if (!project) {
+      return res.status(404).json({ message: `No se encontró el Proyecto con ID ${project_id}` });
     }
+
+    // 1. Todas las TestSuites del Proyecto
+    const allSuites = await TestSuite.find({ project_id: project._id })
+      .select('_id suite_id suite_name owner_suite_id')
+      .lean();
+
+    // 2. Todos los TestCases
+    let allTestCases = await TestCase.find({ project_id: project._id })
+      .populate('suite_id', 'suite_id')
+      .populate('project_id', 'project_id')
+      .populate({
+        path: 'step_case_template',
+        select: 'stc_id name description created_by status project_id'
+      })
+      .select('_id testcase_id title suite_id project_id step_case_template')
+      .lean();
+
+    // 3. Adjuntamos la info de StepTemplates
+    allTestCases = await attachStepCaseTemplateData(allTestCases);
+
+    // Filtrar TestCases sin suite válida
+    const validTestCases = allTestCases.filter(tc => tc.suite_id && tc.suite_id.suite_id);
+
+    // Función recursiva para buildHierarchy
+    const buildHierarchy = (parentSuiteId) => {
+      const childrenSuites = allSuites.filter(
+        s => String(s.owner_suite_id) === String(parentSuiteId)
+      );
+
+      return childrenSuites.map(suite => {
+        const suiteTestCases = validTestCases
+          .filter(tc => String(tc.suite_id.suite_id) === String(suite.suite_id));
+
+        let suiteData = {
+          suite_id: suite.suite_id,
+          suite_name: suite.suite_name,
+          project_id: project.project_id,
+          test_cases: suiteTestCases
+        };
+
+        // Sub-suites
+        const subSuites = buildHierarchy(suite.suite_id);
+        if (subSuites.length > 0) {
+          suiteData.children = subSuites;
+          delete suiteData.test_cases;
+        }
+        return suiteData;
+      });
+    };
+
+    // Suites raíz
+    const rootSuites = allSuites.filter(s => !s.owner_suite_id);
+
+    const hierarchy = rootSuites.map(rootSuite => {
+      const suiteTestCases = validTestCases
+        .filter(tc => String(tc.suite_id.suite_id) === String(rootSuite.suite_id));
+
+      let suiteData = {
+        suite_id: rootSuite.suite_id,
+        suite_name: rootSuite.suite_name,
+        project_id: project.project_id,
+        test_cases: suiteTestCases
+      };
+
+      const subSuites = buildHierarchy(rootSuite.suite_id);
+      if (subSuites.length > 0) {
+        suiteData.children = subSuites;
+        delete suiteData.test_cases;
+      }
+      return suiteData;
+    });
+
+    const response = {
+      project_id: project.project_id,
+      project_name: project.project_name,
+      children: hierarchy
+    };
+    res.json(response);
+  } catch (error) {
+    console.error('❌ Error Jerarquía TestCases:', error);
+    res.status(500).json({ message: 'Error Jerarquía TestCases por Proyecto', error });
+  }
 };
 
+// 7) ACTUALIZAR un TestCase
 exports.updateTestCase = async (req, res) => {
-    try {
-        const { title, suite_id, keywords, ...updateData } = req.body;
-        let keywordObjects = [];
+  try {
+    const { 
+      stepCaseTemplate, // stc_id 
+      title, suite_id, keywords, 
+      ...rest 
+    } = req.body;
 
-        // 🔍 Verificar si el TestCase existe
-        const existingTestCase = await TestCase.findOne({ testcase_id: req.params.id });
-        if (!existingTestCase) {
-            return res.status(404).json({ message: `❌ TestCase con ID '${req.params.id}' no encontrado.` });
-        }
-
-        // Si se actualiza la TestSuite, validar jerarquía y pertenencia al mismo Proyecto
-        if (suite_id && suite_id.toString() !== existingTestCase.suite_id.toString()) {
-            const newSuite = await TestSuite.findOne({ suite_id }).populate('project_id', '_id project_id');
-            if (!newSuite) {
-                return res.status(400).json({ message: `❌ No se encontró la Test Suite con ID '${suite_id}'.` });
-            }
-
-            // 🚨 Validar que la TestSuite sea de último nivel (sin sub Test Suites)
-            const hasChildren = await TestSuite.findOne({ owner_suite_id: suite_id });
-            if (hasChildren) {
-                return res.status(400).json({ 
-                    message: `⚠️ No se pueden asociar casos de prueba a la Test Suite '${suite_id}' porque tiene sub Test Suites. 
-                    Solo se pueden asignar a Test Suites de último nivel.` 
-                });
-            }
-
-            // 🚨 Validar que la TestSuite pertenezca al mismo Proyecto
-            if (newSuite.project_id._id.toString() !== existingTestCase.project_id.toString()) {
-                return res.status(400).json({
-                    message: `❌ No se puede reasignar el TestCase a la Test Suite '${suite_id}' porque pertenece a un proyecto diferente ('${newSuite.project_id.project_id}'). 
-                    Asegúrate de seleccionar una Test Suite dentro del mismo proyecto '${existingTestCase.project_id}'.`
-                });
-            }
-
-            updateData.suite_id = newSuite._id;
-        }
-
-        // 🚨 Validar que no haya otro TestCase con el mismo nombre en la misma TestSuite
-        if (title && title.trim() !== existingTestCase.title) {
-            const duplicateTestCase = await TestCase.findOne({
-                title: title.trim(),
-                suite_id: suite_id || existingTestCase.suite_id, // Si no se cambia, usar el original
-                testcase_id: { $ne: req.params.id } // Excluir el actual
-            });
-
-            if (duplicateTestCase) {
-                return res.status(400).json({
-                    message: `⚠️ Ya existe un TestCase con el nombre '${title}' en la Test Suite '${suite_id || existingTestCase.suite_id}'. 
-                    No se permiten Test Cases duplicados en la misma Test Suite.`
-                });
-            }
-            updateData.title = title.trim();
-        }
-
-        // Validación de Keywords (si se actualizan)
-        if (keywords && keywords.length > 0) {
-            keywordObjects = await Keyword.find({ _id: { $in: keywords } });
-            if (keywordObjects.length !== keywords.length) {
-                return res.status(400).json({ message: "⚠️ Algunas keywords no existen en la base de datos." });
-            }
-            updateData.keywords = keywordObjects.map(k => k._id);
-        }
-
-        // Actualizar el TestCase
-        const updatedTestCase = await TestCase.findOneAndUpdate(
-            { testcase_id: req.params.id },
-            updateData,
-            { new: true }
-        ).populate('keywords', 'keyword_name');
-
-        if (!updatedTestCase) {
-            return res.status(404).json({ message: '❌ TestCase no encontrado.' });
-        }
-
-        res.json({
-            message: "✅ TestCase actualizado exitosamente.",
-            testCase: {
-                testcase_id: updatedTestCase.testcase_id,
-                title: updatedTestCase.title,
-                project_id: updatedTestCase.project_id,
-                suite_id: updatedTestCase.suite_id
-            }
-        });
-
-    } catch (error) {
-        console.error("❌ Error actualizando TestCase:", error);
-        res.status(500).json({ message: '❌ Error actualizando TestCase.', error });
+    const testCase = await TestCase.findOne({ testcase_id: req.params.id });
+    if (!testCase) {
+      return res.status(404).json({ message: `❌ TestCase '${req.params.id}' no encontrado.` });
     }
+
+    // 1. Suite
+    if (suite_id && suite_id.toString() !== String(testCase.suite_id)) {
+      const newSuite = await TestSuite.findOne({ suite_id }).populate('project_id', '_id project_id');
+      if (!newSuite) {
+        return res.status(400).json({ message: `❌ No se encontró la TestSuite '${suite_id}'.` });
+      }
+      const hasChildren = await TestSuite.findOne({ owner_suite_id: suite_id });
+      if (hasChildren) {
+        return res.status(400).json({
+          message: `⚠️ No se pueden asociar TestCases a la TestSuite '${suite_id}' porque tiene sub-suites.`
+        });
+      }
+      // Mismo proyecto
+      if (String(newSuite.project_id._id) !== String(testCase.project_id)) {
+        return res.status(400).json({
+          message: `❌ La TestSuite '${suite_id}' pertenece a otro proyecto.`
+        });
+      }
+      testCase.suite_id = newSuite._id;
+    }
+
+    // 2. Título duplicado
+    if (title && title.trim() !== testCase.title) {
+      const duplicate = await TestCase.findOne({
+        title: title.trim(),
+        suite_id: testCase.suite_id,
+        testcase_id: { $ne: testCase.testcase_id }
+      });
+      if (duplicate) {
+        return res.status(400).json({
+          message: `⚠️ Ya existe un TestCase con nombre '${title}' en esta suite.`
+        });
+      }
+      testCase.title = title.trim();
+    }
+
+    // 3. Keywords
+    if (keywords && keywords.length > 0) {
+      const keywordDocs = await Keyword.find({ _id: { $in: keywords } });
+      if (keywordDocs.length !== keywords.length) {
+        return res.status(400).json({ message: '⚠️ Algunas keywords no existen.' });
+      }
+      testCase.keywords = keywordDocs.map(k => k._id);
+    }
+
+    // 4. StepCaseTemplate (stc_id)
+    if (stepCaseTemplate) {
+      const scTemplateDoc = await StepCaseTemplate.findOne({ stc_id: stepCaseTemplate });
+      if (!scTemplateDoc) {
+        return res.status(400).json({
+          message: `❌ El StepCaseTemplate '${stepCaseTemplate}' no existe.`
+        });
+      }
+      // Validar que sea el mismo proyecto
+      // scTemplateDoc.project_id es un string "PRY-0001"
+      // testCase.project_id es un ObjectId => buscar correlativo en Project.
+      // O, si no, asume que conserven la nomenclatura.
+      // Se simplifica:
+      const projectCorrelativo = await Project.findById(testCase.project_id).select('project_id');
+      if (!projectCorrelativo || scTemplateDoc.project_id !== projectCorrelativo.project_id) {
+        return res.status(400).json({
+          message: `❌ El StepCaseTemplate '${stepCaseTemplate}' no corresponde al mismo proyecto.`
+        });
+      }
+      testCase.step_case_template = scTemplateDoc._id;
+    }
+
+    // 5. Resto de campos
+    Object.assign(testCase, rest);
+
+    await testCase.save();
+
+    return res.json({
+      message: '✅ TestCase actualizado.',
+      testCase: {
+        testcase_id: testCase.testcase_id,
+        title: testCase.title
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error update TestCase:', error);
+    return res.status(500).json({ message: 'Error update TestCase', error });
+  }
+};
+
+// 8) Asignar StepCaseTemplate a un TestCase (opcional)
+exports.assignStepCaseTemplateToTestCase = async (req, res) => {
+  try {
+    const { testcaseId } = req.params;  // "TC-0001"
+    const { stepCaseTemplate } = req.body; // "STC-0002"
+
+    if (!stepCaseTemplate) {
+      return res.status(400).json({ message: 'Debes proporcionar un stc_id de StepCaseTemplate.' });
+    }
+
+    // 1. Buscar TestCase
+    const testCase = await TestCase.findOne({ testcase_id: testcaseId });
+    if (!testCase) {
+      return res.status(404).json({
+        message: `No se encontró TestCase '${testcaseId}'`
+      });
+    }
+
+    // 2. Buscar StepCaseTemplate
+    const scTemplateDoc = await StepCaseTemplate.findOne({ stc_id: stepCaseTemplate });
+    if (!scTemplateDoc) {
+      return res.status(404).json({ message: `No existe StepCaseTemplate '${stepCaseTemplate}'` });
+    }
+
+    // 3. Validar mismo proyecto
+    // scTemplateDoc.project_id => string "PRY-0001"
+    // testCase.project_id => ObjectId => buscar correlativo
+    const projectCorrelativo = await Project.findById(testCase.project_id).select('project_id');
+    if (!projectCorrelativo || scTemplateDoc.project_id !== projectCorrelativo.project_id) {
+      return res.status(400).json({
+        message: `❌ StepCaseTemplate '${stepCaseTemplate}' no corresponde al mismo proyecto.`
+      });
+    }
+
+    // 4. Asignar
+    testCase.step_case_template = scTemplateDoc._id;
+    await testCase.save();
+
+    return res.json({
+      message: `StepCaseTemplate '${stepCaseTemplate}' asignado al TestCase '${testcaseId}'.`
+    });
+  } catch (error) {
+    console.error('Error asignando StepCaseTemplate:', error);
+    res.status(500).json({ message: 'Error asignando StepCaseTemplate', error });
+  }
+};
+
+// 9) ELIMINAR
+exports.deleteTestCase = async (req, res) => {
+  try {
+    const deleted = await TestCase.findOneAndDelete({ testcase_id: req.params.id });
+    if (!deleted) {
+      return res.status(404).json({ message: 'TestCase no encontrado' });
+    }
+    res.json({ message: '✅ TestCase eliminado.' });
+  } catch (error) {
+    return res.status(500).json({ message: 'Error eliminando TestCase', error });
+  }
 };
