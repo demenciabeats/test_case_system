@@ -4,9 +4,7 @@ const TestSuite = require('../models/TestSuite');
 const Project = require('../models/Project');
 const Keyword = require('../models/Keyword');
 
-// **IMPORTA** tus modelos de StepCaseTemplate y StepTemplate
-const StepCaseTemplate = require('../models/StepCaseTemplate');
-const StepTemplate = require('../models/StepTemplate');
+
 
 // 1) CREAR un TestCase
 exports.createTestCase = async (req, res) => {
@@ -14,9 +12,7 @@ exports.createTestCase = async (req, res) => {
     const {
       title, description, priority, status, test_type, automation_status,
       suite_id, project_id, expected_result, duration_in_minutes,
-      tester_occupation, keywords,
-      // Nuevo: stc_id => si el usuario desea enlazar una StepCaseTemplate
-      stepCaseTemplate
+      tester_occupation, keywords
     } = req.body;
 
     // 1. Buscar suite y proyecto
@@ -61,26 +57,7 @@ exports.createTestCase = async (req, res) => {
       }
     }
 
-    // 3. Validar StepCaseTemplate (si se pasa)
-    let stepCaseTemplateId = null;
-    if (stepCaseTemplate) {
-      // Buscar StepCaseTemplate por stc_id
-      const scTemplateDoc = await StepCaseTemplate.findOne({ stc_id: stepCaseTemplate });
-      if (!scTemplateDoc) {
-        return res.status(400).json({
-          message: `❌ El StepCaseTemplate con id '${stepCaseTemplate}' no existe.`
-        });
-      }
-      // Validar que sea mismo project (scTemplateDoc.project_id es string "PRY-0001")
-      if (scTemplateDoc.project_id !== project_id) {
-        return res.status(400).json({
-          message: `❌ El StepCaseTemplate '${stepCaseTemplate}' no pertenece al mismo Proyecto '${project_id}'.`
-        });
-      }
-      stepCaseTemplateId = scTemplateDoc._id;
-    }
-
-    // 4. Crear TestCase
+     // 4. Crear TestCase
     const newTC = new TestCase({
       title: title.trim(),
       description,
@@ -94,8 +71,7 @@ exports.createTestCase = async (req, res) => {
       duration_in_minutes,
       tester_occupation,
       created_by: req.user.id,
-      keywords: keywordObjects.map(k => k._id),
-      step_case_template: stepCaseTemplateId // <--- Enlazar la plantilla
+      keywords: keywordObjects.map(k => k._id)
     });
 
     await newTC.save();
@@ -113,68 +89,6 @@ exports.createTestCase = async (req, res) => {
   }
 };
 
-// Función helper para añadir al response la info del StepCaseTemplate y sus StepTemplates
-async function attachStepCaseTemplateData(testCases) {
-  // testCases puede ser un solo elemento o un array
-  // Normalizamos a array para procesar en bucle
-  const isSingle = !Array.isArray(testCases);
-  const arrayTC = isSingle ? [testCases] : testCases;
-
-  // Para cada testCase, si tiene step_case_template, buscamos su stc_id
-  // y luego buscamos StepTemplates por template_id = stc_id
-  const results = [];
-  for (const tc of arrayTC) {
-    // Copiamos sin mutar
-    const formatted = { ...tc };
-
-    if (tc.step_case_template) {
-      // Buscamos el StepCaseTemplate "populado"
-      // (Si no está poblado, lo populate, o si ya está poblado, lo tenemos en la data)
-      // Asegúrate de .populate('step_case_template') en la query principal
-
-      // Obtenemos stc_id del template
-      const scTemplateDoc = tc.step_case_template;
-      if (scTemplateDoc && scTemplateDoc.stc_id) {
-        // Buscar todos StepTemplates => template_id = stc_id
-        const stepTemplates = await StepTemplate.find({ template_id: scTemplateDoc.stc_id })
-          .sort({ order: 1 })  // Ordenados
-          .lean();
-
-        // Incluimos en la respuesta:
-        formatted.step_case_template = {
-          stc_id: scTemplateDoc.stc_id,
-          name: scTemplateDoc.name,
-          description: scTemplateDoc.description,
-          created_by: scTemplateDoc.created_by,
-          status: scTemplateDoc.status,
-          project_id: scTemplateDoc.project_id,
-          // Adjuntamos los stepTemplates en un array:
-          step_templates: stepTemplates.map(st => ({
-            stt_id: st.stt_id,
-            title: st.title,
-            description: st.description,
-            expected_result: st.expected_result,
-            type: st.type,
-            is_critical: st.is_critical,
-            is_stop_point: st.is_stop_point,
-            stop_reason: st.stop_reason,
-            stop_action_required: st.stop_action_required,
-            automation_type: st.automation_type,
-            script_paste: st.script_paste,
-            attachments: st.attachments,
-            order: st.order,
-            created_by: st.created_by,
-            project_id: st.project_id
-          }))
-        };
-      }
-    }
-    results.push(formatted);
-  }
-
-  return isSingle ? results[0] : results;
-}
-
 // 2) OBTENER TODOS los TestCases
 exports.getTestCases = async (req, res) => {
   try {
@@ -183,16 +97,8 @@ exports.getTestCases = async (req, res) => {
       .populate({ path: 'suite_id', model: 'TestSuite', select: 'suite_id suite_name' })
       .populate({ path: 'project_id', model: 'Project', select: 'project_id project_name' })
       .populate({ path: 'keywords', select: '_id keyword_name' })
-      // populate la StepCaseTemplate
-      .populate({
-        path: 'step_case_template',
-        select: 'stc_id name description created_by status project_id'
-      })
       .lean();
-
-    // Adjuntar la info de StepTemplates para cada StepCaseTemplate
-    const withTemplates = await attachStepCaseTemplateData(testCases);
-    res.json(withTemplates);
+    res.json(testCases);
   } catch (error) {
     console.error('Error obteniendo TestCases:', error);
     res.status(500).json({ message: 'Error obteniendo TestCases', error });
@@ -207,19 +113,12 @@ exports.getTestCaseById = async (req, res) => {
       .populate({ path: 'suite_id', select: 'suite_id suite_name' })
       .populate({ path: 'project_id', select: 'project_id project_name' })
       .populate({ path: 'keywords', select: '_id keyword_name' })
-      .populate({
-        path: 'step_case_template',
-        select: 'stc_id name description created_by status project_id'
-      })
       .lean();
 
     if (!testCase) {
       return res.status(404).json({ message: 'TestCase no encontrado' });
     }
-
-    // Adjuntar info de StepCaseTemplate y StepTemplates
-    const formatted = await attachStepCaseTemplateData(testCase);
-    res.json(formatted);
+    res.json(testCase);
   } catch (error) {
     console.error('Error obteniendo TestCase:', error);
     res.status(500).json({ message: 'Error obteniendo TestCase', error });
@@ -240,14 +139,8 @@ exports.getTestCasesBySuite = async (req, res) => {
       .populate({ path: 'suite_id', select: 'suite_id suite_name' })
       .populate({ path: 'project_id', select: 'project_id project_name' })
       .populate({ path: 'keywords', select: '_id keyword_name' })
-      .populate({
-        path: 'step_case_template',
-        select: 'stc_id name description created_by status project_id'
-      })
       .lean();
-
-    const withTemplates = await attachStepCaseTemplateData(testCases);
-    res.json(withTemplates);
+    res.json(testCases);
   } catch (error) {
     console.error('Error obteniendo TestCases por TestSuite:', error);
     res.status(500).json({ message: 'Error obteniendo TestCases por TestSuite', error });
@@ -268,14 +161,9 @@ exports.getTestCasesByProject = async (req, res) => {
       .populate({ path: 'suite_id', select: 'suite_id suite_name' })
       .populate({ path: 'project_id', select: 'project_id project_name' })
       .populate({ path: 'keywords', select: '_id keyword_name' })
-      .populate({
-        path: 'step_case_template',
-        select: 'stc_id name description created_by status project_id'
-      })
       .lean();
 
-    const withTemplates = await attachStepCaseTemplateData(testCases);
-    res.json(withTemplates);
+    res.json(testCases);
   } catch (error) {
     console.error('Error obteniendo TestCases por Proyecto:', error);
     res.status(500).json({ message: 'Error obteniendo TestCases por Proyecto', error });
@@ -301,18 +189,8 @@ exports.getTestCasesHierarchyByProject = async (req, res) => {
     let allTestCases = await TestCase.find({ project_id: project._id })
       .populate('suite_id', 'suite_id')
       .populate('project_id', 'project_id')
-      .populate({
-        path: 'step_case_template',
-        select: 'stc_id name description created_by status project_id'
-      })
-      .select('_id testcase_id title suite_id project_id step_case_template')
+      .select('_id testcase_id title suite_id project_id')
       .lean();
-
-    // 3. Adjuntamos la info de StepTemplates
-    allTestCases = await attachStepCaseTemplateData(allTestCases);
-
-    // Filtrar TestCases sin suite válida
-    const validTestCases = allTestCases.filter(tc => tc.suite_id && tc.suite_id.suite_id);
 
     // Función recursiva para buildHierarchy
     const buildHierarchy = (parentSuiteId) => {
@@ -434,28 +312,6 @@ exports.updateTestCase = async (req, res) => {
       testCase.keywords = keywordDocs.map(k => k._id);
     }
 
-    // 4. StepCaseTemplate (stc_id)
-    if (stepCaseTemplate) {
-      const scTemplateDoc = await StepCaseTemplate.findOne({ stc_id: stepCaseTemplate });
-      if (!scTemplateDoc) {
-        return res.status(400).json({
-          message: `❌ El StepCaseTemplate '${stepCaseTemplate}' no existe.`
-        });
-      }
-      // Validar que sea el mismo proyecto
-      // scTemplateDoc.project_id es un string "PRY-0001"
-      // testCase.project_id es un ObjectId => buscar correlativo en Project.
-      // O, si no, asume que conserven la nomenclatura.
-      // Se simplifica:
-      const projectCorrelativo = await Project.findById(testCase.project_id).select('project_id');
-      if (!projectCorrelativo || scTemplateDoc.project_id !== projectCorrelativo.project_id) {
-        return res.status(400).json({
-          message: `❌ El StepCaseTemplate '${stepCaseTemplate}' no corresponde al mismo proyecto.`
-        });
-      }
-      testCase.step_case_template = scTemplateDoc._id;
-    }
-
     // 5. Resto de campos
     Object.assign(testCase, rest);
 
@@ -471,53 +327,6 @@ exports.updateTestCase = async (req, res) => {
   } catch (error) {
     console.error('❌ Error update TestCase:', error);
     return res.status(500).json({ message: 'Error update TestCase', error });
-  }
-};
-
-// 8) Asignar StepCaseTemplate a un TestCase (opcional)
-exports.assignStepCaseTemplateToTestCase = async (req, res) => {
-  try {
-    const { testcaseId } = req.params;  // "TC-0001"
-    const { stepCaseTemplate } = req.body; // "STC-0002"
-
-    if (!stepCaseTemplate) {
-      return res.status(400).json({ message: 'Debes proporcionar un stc_id de StepCaseTemplate.' });
-    }
-
-    // 1. Buscar TestCase
-    const testCase = await TestCase.findOne({ testcase_id: testcaseId });
-    if (!testCase) {
-      return res.status(404).json({
-        message: `No se encontró TestCase '${testcaseId}'`
-      });
-    }
-
-    // 2. Buscar StepCaseTemplate
-    const scTemplateDoc = await StepCaseTemplate.findOne({ stc_id: stepCaseTemplate });
-    if (!scTemplateDoc) {
-      return res.status(404).json({ message: `No existe StepCaseTemplate '${stepCaseTemplate}'` });
-    }
-
-    // 3. Validar mismo proyecto
-    // scTemplateDoc.project_id => string "PRY-0001"
-    // testCase.project_id => ObjectId => buscar correlativo
-    const projectCorrelativo = await Project.findById(testCase.project_id).select('project_id');
-    if (!projectCorrelativo || scTemplateDoc.project_id !== projectCorrelativo.project_id) {
-      return res.status(400).json({
-        message: `❌ StepCaseTemplate '${stepCaseTemplate}' no corresponde al mismo proyecto.`
-      });
-    }
-
-    // 4. Asignar
-    testCase.step_case_template = scTemplateDoc._id;
-    await testCase.save();
-
-    return res.json({
-      message: `StepCaseTemplate '${stepCaseTemplate}' asignado al TestCase '${testcaseId}'.`
-    });
-  } catch (error) {
-    console.error('Error asignando StepCaseTemplate:', error);
-    res.status(500).json({ message: 'Error asignando StepCaseTemplate', error });
   }
 };
 

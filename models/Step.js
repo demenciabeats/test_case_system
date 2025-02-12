@@ -1,5 +1,4 @@
 // models/Step.js
-
 const mongoose = require('mongoose');
 
 const stepSchema = new mongoose.Schema({
@@ -10,8 +9,7 @@ const stepSchema = new mongoose.Schema({
   title: {
     type: String,
     required: true
-    // Eliminamos: unique: true
-    // Porque queremos permitir que el mismo título exista en proyectos distintos
+    // Eliminamos: unique: true => ya no es globalmente único
   },
   description: {
     type: String,
@@ -71,6 +69,12 @@ const stepSchema = new mongoose.Schema({
     ref: 'Project',
     required: true
   },
+
+  // **NUEVO**: relación a Keywords
+  keywords: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Keyword'
+  }],
 
   created_at: {
     type: Date,
